@@ -38,7 +38,22 @@ PreToolUse adds `tool_name`, `tool_input`, `tool_use_id`. Real example (Bash):
 
 WebFetch not yet captured — expected `{"url": "...", ...}` per public docs, unconfirmed.
 
-UserPromptSubmit payload not yet captured in this repo (fires on the *next* prompt after hooks are enabled, and this capture session enabled hooks mid-session). Expected shape per public docs: same common fields plus `prompt` (the user's text) — **unconfirmed field name, needs one real capture before relying on it.**
+UserPromptSubmit real example — confirms the field name is `prompt` and that `effort` is absent on this event (only PreToolUse carried it):
+
+```json
+{
+  "session_id": "3d97e6f2-2818-4b71-955c-ff6310aeb5be",
+  "transcript_path": "C:\\Users\\Artem\\.claude\\projects\\d--GITHUB-AgentWarden\\3d97e6f2-2818-4b71-955c-ff6310aeb5be.jsonl",
+  "cwd": "D:\\GITHUB\\AgentWarden",
+  "scratchpad_dir": "C:\\Users\\Artem\\AppData\\Local\\Temp\\claude\\d--GITHUB-AgentWarden\\3d97e6f2-2818-4b71-955c-ff6310aeb5be\\scratchpad",
+  "prompt_id": "f471a566-a975-47a2-a19d-c28324bc918c",
+  "permission_mode": "auto",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "<ide_opened_file>...</ide_opened_file>\nЧто проверить дальше?"
+}
+```
+
+Note: `prompt` can contain injected context the IDE adds (e.g. `<ide_opened_file>` blocks), not just the literal text the user typed — AgentWarden must treat it as one opaque string, not parse it for intent beyond what the judge prompt already does.
 
 ## Output
 
