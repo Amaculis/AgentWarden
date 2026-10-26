@@ -21,6 +21,8 @@ Known limitation to state openly: the judge is an LLM and can itself be attacked
 
 Finding from the hooks docs: a hook that crashes, times out or cannot connect does NOT block the action (fail-open). So product hooks are command hooks that call the daemon with their own timeout and return `ask` on any failure. See the `hook-protocol` skill.
 
+Decision (27 Oct, spec 002): if the daemon cannot write the audit row for an action, the answer is `ask`, whatever the policy said. An action that can't be recorded is never allowed silently. Malformed events to `/decide` get `200` + `ask` (not 4xx), so the hook only has to handle "daemon unreachable / timeout".
+
 ## MVP scope
 
 In: Claude Code PreToolUse + UserPromptSubmit hooks; rules; Meta judge with JSON verdict; fail-safe to ask; SQLite audit log; small dashboard; eval set 150+ cases with metrics for rules / judge / both; demo where a prompt injection in a README tries to read `.env` and send it out.
