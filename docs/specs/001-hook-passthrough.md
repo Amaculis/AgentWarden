@@ -27,10 +27,10 @@ Before deciding anything we need the exact payloads Claude Code sends. This spec
 
 ## Acceptance criteria
 
-- [ ] `test_on_tool_appends_event` — feeding a sample PreToolUse payload appends one valid JSON line with `received_at`.
-- [ ] `test_on_prompt_appends_event` — same for UserPromptSubmit.
-- [ ] `test_invalid_json_is_ignored` — garbage on stdin: exit 0, no file written, empty stdout.
-- [ ] `test_hooks_print_nothing` — stdout is empty in all cases.
+- [x] `test_on_tool_appends_event` — feeding a sample PreToolUse payload appends one valid JSON line with `received_at`.
+- [x] `test_on_prompt_appends_event` — same for UserPromptSubmit.
+- [x] `test_invalid_json_is_ignored` — garbage on stdin: exit 0, no file written, empty stdout.
+- [x] `test_hooks_print_nothing` — stdout is empty in all cases.
 - [ ] Manual: enable the hooks in a scratch project, run a short Claude Code session (read a file, run a command, edit a file), confirm events for Read, Bash, Edit are captured.
 - [ ] Real payloads for Read, Bash, Edit, Write and UserPromptSubmit pasted into the `hook-protocol` skill, replacing the doc examples.
 
