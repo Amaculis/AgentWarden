@@ -5,31 +5,40 @@ description: Exact Claude Code hook input/output formats for PreToolUse and User
 
 # Claude Code hook protocol (for AgentWarden)
 
-Source: Claude Code hooks reference (code.claude.com/docs/en/hooks), checked 2026-10-26. Replace the examples below with real payloads from `.agentwarden/events.jsonl` once spec 001 is done.
+Source: Claude Code hooks reference (code.claude.com/docs/en/hooks), checked 2026-10-26. Real payloads below captured 2026-10-26 by enabling the hooks in this repo's `.claude/settings.local.json` (gitignored) and running Bash/Read/Write/Edit in a live session; raw lines are in `.agentwarden/events.jsonl` (gitignored, not committed).
 
 ## Input (stdin JSON for command hooks, POST body for HTTP hooks)
 
-Common fields on every event: `session_id`, `prompt_id`, `transcript_path`, `cwd`, `permission_mode`, `hook_event_name`.
+Common fields on every event: `session_id`, `transcript_path`, `cwd`, `scratchpad_dir`, `prompt_id`, `permission_mode`, `effort`, `hook_event_name`. (`scratchpad_dir` and `effort` were not in the public reference doc — this build's Claude Code sends them too; treat unknown extra fields as pass-through, don't rely on them.)
 
-PreToolUse adds `tool_name`, `tool_input`, `tool_use_id`:
+PreToolUse adds `tool_name`, `tool_input`, `tool_use_id`. Real example (Bash):
 
 ```json
 {
-  "session_id": "abc123",
-  "prompt_id": "550e8400-e29b-41d4-a716-446655440000",
-  "transcript_path": "/home/user/.claude/projects/.../transcript.jsonl",
-  "cwd": "/home/user/my-project",
-  "permission_mode": "default",
+  "session_id": "3d97e6f2-2818-4b71-955c-ff6310aeb5be",
+  "transcript_path": "C:\\Users\\Artem\\.claude\\projects\\d--GITHUB-AgentWarden\\3d97e6f2-2818-4b71-955c-ff6310aeb5be.jsonl",
+  "cwd": "D:\\GITHUB\\AgentWarden",
+  "scratchpad_dir": "C:\\Users\\Artem\\AppData\\Local\\Temp\\claude\\d--GITHUB-AgentWarden\\3d97e6f2-2818-4b71-955c-ff6310aeb5be\\scratchpad",
+  "prompt_id": "5daaca00-4922-43ca-80ec-def0e591efc6",
+  "permission_mode": "auto",
+  "effort": {"level": "medium"},
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
-  "tool_input": {"command": "npm test", "description": "Run test suite"},
-  "tool_use_id": "toolu_01ABC123"
+  "tool_input": {"command": "echo test-manual-capture", "description": "Run a sample Bash command to trigger PreToolUse hook"},
+  "tool_use_id": "toolu_01FyVCvSNS9ZJkXzSUHKwhUh"
 }
 ```
 
-`tool_input` shape depends on the tool: Bash → `command`; Read/Edit/Write → `file_path` (+ content fields); WebFetch → `url`. Record real examples for each tool we handle.
+`tool_input` shape depends on the tool — real shapes captured:
 
-UserPromptSubmit carries the user's prompt text. Confirm the field name from a real payload (expected: `prompt`).
+- Bash → `{"command": "...", "description": "..."}`
+- Read → `{"file_path": "...", "limit": 5}` (`limit`/`offset` only present when passed)
+- Write → `{"file_path": "...", "content": "..."}`
+- Edit → `{"file_path": "...", "old_string": "...", "new_string": "...", "replace_all": false}`
+
+WebFetch not yet captured — expected `{"url": "...", ...}` per public docs, unconfirmed.
+
+UserPromptSubmit payload not yet captured in this repo (fires on the *next* prompt after hooks are enabled, and this capture session enabled hooks mid-session). Expected shape per public docs: same common fields plus `prompt` (the user's text) — **unconfirmed field name, needs one real capture before relying on it.**
 
 ## Output
 
