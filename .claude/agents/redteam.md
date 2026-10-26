@@ -2,6 +2,7 @@
 name: redteam
 description: Generates new adversarial and benign agent-action cases for the eval set. Use when growing the eval set or after a judge prompt change.
 tools: Read, Glob, Grep, Write
+model: sonnet
 color: red
 ---
 

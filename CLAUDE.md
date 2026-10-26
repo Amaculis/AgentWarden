@@ -2,7 +2,7 @@
 
 Semantic firewall for AI coding agents. It intercepts Claude Code actions through hooks, checks them with deterministic rules, and asks a Meta model (Muse Spark via Meta Model API, or Meta open-weights models running locally) whether the action fits the task the user gave. Every action gets `allow`, `deny` or `ask`.
 
-Built for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026). Only code written during the event goes in this repo.
+Built for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026). Only code written during the event goes in this repo. Background, scope and decisions: `docs/CONTEXT.md` (read only when the task needs it).
 
 ## Architecture
 
@@ -36,9 +36,23 @@ Built for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026). Only 
 ## Workflow
 
 - Every task starts from a spec in `docs/specs/NNN-name.md` (skill: `warden-spec`).
+- Size the process to the task:
+  - **Small** (one module, under ~100 changed lines): no subagents. Write tests and code in this session.
+  - **Large** (several modules, or touches hooks/decide/judge fail-safe): `planner` → `test-writer` → implement → `reviewer`.
+  - Run `reviewer` only on Large tasks, or when the human asks.
+- Read only the files the task needs. Do not scan the whole repo.
 - Tests first, then implementation until `make test` is green.
 - Small commits; the message starts with the spec number, e.g. `001: hook passthrough`.
 - Definition of done: `make lint` and `make test` green, every acceptance criterion in the spec checked off.
+
+## Session rules (always on — details in the `dev-workflow` skill)
+
+- Start: read `docs/SESSION.md` if it exists.
+- Default model is Sonnet. If the task is architecture, fail-safe/redaction/hook-wrapper design, judge prompt work, a large spec, or debugging after 2 failed attempts, say in one line that it needs Opus.
+- Mechanical work (dashboard, README, demo scaffolding, bulk eval drafts) → offer a Muse Code handoff in `docs/handoff/`.
+- When the user decides something, or you verify a fact about Meta API or hooks, offer in one line to save it to the right .md file.
+- When a spec is committed, the topic changes, or the session is long: update `docs/SESSION.md`, then recommend `/clear` and name the next task and model.
+- Reply to the user in Russian; keep code, comments and docs in English.
 
 ## Stack
 

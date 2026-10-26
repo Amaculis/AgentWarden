@@ -2,6 +2,7 @@
 name: test-writer
 description: Writes pytest tests from a spec's acceptance criteria before the implementation exists. Use right after the planner, before implementing.
 tools: Read, Glob, Grep, Write, Edit, Bash
+model: sonnet
 color: green
 ---
 

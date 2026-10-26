@@ -1,5 +1,7 @@
 # 001 — Hook passthrough and event capture
 
+Size: small
+
 ## Context
 
 Before deciding anything we need the exact payloads Claude Code sends. This spec adds two command hooks that record every UserPromptSubmit and PreToolUse event to a local file and make no decision. The recorded payloads become the real examples in the `hook-protocol` skill and the first dogfood eval candidates.

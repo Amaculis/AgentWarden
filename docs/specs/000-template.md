@@ -1,5 +1,7 @@
 # NNN — <short name>
 
+Size: small | large
+
 ## Context
 
 Why this change, in 2–3 sentences. Link the previous spec if it builds on one.

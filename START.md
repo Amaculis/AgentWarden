@@ -1,61 +1,77 @@
-# AgentWarden — how to start development
+# AgentWarden — как начать разработку
 
-Scaffolding for agentic development: agents immediately follow project rules, format code themselves, and can't finish with failing tests. There's no product code here yet — you write that with agents starting from spec 001.
+Каркас для агентной разработки: агенты сразу работают по правилам проекта, сами форматируют код и не могут закончить с упавшими тестами. Продуктового кода здесь пока нет — его пишешь ты с агентами начиная со спеки 001.
 
-## What's inside
+## Что внутри
 
-| File | Purpose |
+| Файл | Зачем |
 | --- | --- |
-| `CLAUDE.md` | Project rules for agents: architecture, commands, 6 invariants, process |
-| `.claude/settings.json` | Permissions (make/uv/git without prompts; `.env`, `~/.ssh`, `curl`, `git push` forbidden) and 3 dev hooks |
-| `.claude/hooks/protect_core.py` | Agent edits `prompts/` or `eval/cases/` → Claude Code asks you |
-| `.claude/hooks/format_py.py` | After every .py edit: ruff format + fix; errors remain → agent fixes right away |
-| `.claude/hooks/stop_tests.py` | Agent can't finish while fast tests are red |
+| `CLAUDE.md` | Правила проекта для агентов: архитектура, команды, 6 инвариантов, процесс |
+| `.claude/settings.json` | Разрешения (make/uv/git без вопросов; `.env`, `~/.ssh`, `curl`, `git push` запрещены) и 3 хука разработки |
+| `.claude/hooks/protect_core.py` | Агент правит `prompts/` или `eval/cases/` → Claude Code спрашивает тебя |
+| `.claude/hooks/format_py.py` | После каждой правки .py: ruff format + fix; остались ошибки → агент чинит сразу |
+| `.claude/hooks/stop_tests.py` | Агент не может закончить, пока быстрые тесты красные |
 | `.claude/agents/` | `planner`, `test-writer`, `reviewer`, `redteam` |
 | `.claude/skills/` | `hook-protocol`, `meta-api`, `warden-spec`, `eval-case`, `judge-tuning` |
-| `docs/specs/000-template.md` | Spec template |
-| `docs/specs/001-hook-passthrough.md` | First task — ready to work on |
-| `prompts/judge.md` | Judge prompt scaffold — you write it yourself on 10/28 |
+| `docs/specs/000-template.md` | Шаблон спеки |
+| `docs/specs/001-hook-passthrough.md` | Первая задача — готова к работе |
+| `prompts/judge.md` | Каркас промпта судьи — пишешь сам 28.10 |
 | `Makefile`, `pyproject.toml`, `.github/workflows/ci.yml` | uv, ruff, pytest, CI |
 
-## Tonight (≈1.5 hours)
+## Сегодня вечером (≈1,5 часа)
 
-1. **Credits:** form from the mailing list → card on dev.meta.ai → Billing → Spend Limit → Standard mode.
-2. **Repository:** unpack the archive, then:
+1. **Кредиты:** форма из рассылки → карта на dev.meta.ai → Billing → Spend Limit → режим Standard.
+2. **Репозиторий:** распакуй архив, затем:
    ```
    git init && git add . && git commit -m "000: project scaffold"
    gh repo create agentwarden --public --source . --push
    ```
-   First commit — today, after the hackathon starts: this is proof everything was done during the event.
-3. **Environment:** `uv sync`, then `make test` (no tests yet — that's normal).
-4. **`.env`:** copy `.env.example` → `.env`, paste in the key. The agent doesn't read `.env` — that's forbidden in settings.
-5. **First request to the model — by hand, not by agent:** go through the checklist at the end of `.claude/skills/meta-api/SKILL.md` and fix anything marked VERIFY. It takes 20 minutes, and afterward agents won't be guessing at the API.
-6. **Start Claude Code in the project folder** and give the first task:
+   Первый коммит — сегодня, после старта хакатона: это доказательство, что всё сделано во время события.
+3. **Окружение:** `uv sync`, затем `make test` (тестов пока нет — это нормально).
+4. **`.env`:** скопируй `.env.example` → `.env`, вставь ключ. Агент `.env` не читает — это запрещено в settings.
+5. **Первый запрос к модели — руками, не агентом:** пройди чеклист в конце `.claude/skills/meta-api/SKILL.md` и исправь всё, что помечено VERIFY. Это 20 минут, и потом агенты не будут угадывать API.
+6. **Запусти Claude Code в папке проекта** и дай первую задачу:
    ```
-   Implement docs/specs/001-hook-passthrough.md. Run the planner subagent first,
-   then test-writer, then implement, then the reviewer subagent.
+   Implement docs/specs/001-hook-passthrough.md.
    ```
+   Спека помечена `Size: small`, поэтому агент сделает её без субагентов.
 
-## How to work every day
+## Как работать каждый день
 
-One cycle per task:
+Один цикл на задачу:
 
-1. "Write spec 002 for <what's needed> using the warden-spec skill" → you edit the spec (5 minutes, this is the most important part).
-2. "Implement docs/specs/002-....md" — planner, tests, implementation, review follow the process from `CLAUDE.md`.
-3. You read the diff and the reviewer's notes, then commit.
+1. «Write spec 002 for <что нужно> using the warden-spec skill» → ты правишь спеку (5 минут, это самое важное).
+2. «Implement docs/specs/002-....md» — планировщик, тесты, реализация, ревью идут по процессу из `CLAUDE.md`.
+3. Читаешь diff и замечания reviewer, коммитишь.
 
-In parallel: while one session implements, write the next spec in a second one. If tasks don't overlap on files, run the second implementation in a separate git worktree.
+Параллельно: пока одна сессия реализует, во второй пиши следующую спеку. Если задачи не пересекаются по файлам, вторую реализацию запускай в отдельном git worktree.
 
-## Important finding about hooks
+## Как не съесть подписку
 
-Per the Claude Code docs, a hook that **fails, doesn't respond in time, or can't be connected to does not block the action** — the agent just continues. For protection purposes this is fail-open. That's why AgentWarden's product hooks are command scripts that themselves call the daemon with their own timeout and return `ask` on any error. Details are in the `hook-protocol` skill. Worth mentioning in the submission as a deliberate design decision.
+Агентная разработка расходует лимиты в разы быстрее чата, поэтому каркас настроен экономно:
 
-## Meta models for development
+- **Субагенты работают на Sonnet**, а не на Opus (`model: sonnet` в `.claude/agents/`).
+- **Полный цикл только для крупных задач.** Мелкие (`Size: small` в спеке) делаются одной сессией, без планировщика и ревьюера.
+- **Хуки разработки токенов не тратят**: ruff и pytest работают локально. Агенту уходят только ошибки.
 
-- **Muse Code** — Meta's CLI agent, free itself, tokens billed at the Muse Spark rate. Credits most likely come from the same Meta Model API balance as the judge: check Billing after your first session.
-- **Use Standard only.** Contributor is ~12x cheaper, but trains models on your code.
-- **Recommendation:** main development — in Claude Code (your subscription limits). Muse Code — for separate tasks (dashboard, some tests, eval script), so you can honestly state in the submission that Meta models also wrote code. The same `CLAUDE.md` works as instructions for Muse Code too.
+Что делать тебе:
+
+- **Основная модель — Sonnet.** Переключайся на Opus только для архитектуры, промпта судьи и сложной отладки.
+- **`/clear` между задачами.** Длинная сессия с историей прошлых задач тратит больше всего: каждое сообщение заново отправляет весь контекст.
+- **Короткие спеки и точные задачи.** «Реализуй 003» с готовой спекой дешевле, чем обсуждение с агентом, что делать.
+- **Механическую работу — в Muse Code** на кредиты Meta: дашборд, генерация тестовых кейсов, eval-скрипт, README. Судье на всю разработку и eval хватит долларов 10–20, остальные ~$130 можно потратить на Muse Code.
+- **Следи за расходом** в первые два дня. Если к среде ушло больше трети недельного лимита, переноси больше задач в Muse Code.
+
+## Важная находка про хуки
+
+По документации Claude Code, хук, который **упал, не ответил вовремя или к которому не удалось подключиться, не блокирует действие** — агент просто продолжает. Для защиты это fail-open. Поэтому продуктовые хуки AgentWarden — command-скрипты, которые сами ходят в daemon со своим таймаутом и при любой ошибке возвращают `ask`. Подробности — в скилле `hook-protocol`. Это стоит упомянуть в сабмите как продуманное решение.
+
+## Модели Meta для разработки
+
+- **Muse Code** — CLI-агент от Meta, сам бесплатный, токены платные по тарифу Muse Spark. Кредиты, скорее всего, списываются с того же баланса Meta Model API, что и у судьи: проверь в Billing после первой сессии.
+- **Используй только Standard.** Contributor в ~12 раз дешевле, но обучает модели на твоём коде.
+- **Рекомендация:** основная разработка — в Claude Code (лимиты твоей подписки). Muse Code — на отдельные задачи (дашборд, часть тестов, eval-скрипт), чтобы честно написать в сабмите, что код писали и модели Meta. Тот же `CLAUDE.md` годится как инструкция и для Muse Code.
 
 ## Windows
 
-Hooks are invoked as `python3`. If on Windows the command is called `python` or `py`, change it in `.claude/settings.json`. For `make`, install it via `winget install GnuWin32.Make` or run the commands from the `Makefile` directly.
+Хуки вызываются как `python3`. Если на Windows команда называется `python` или `py`, замени в `.claude/settings.json`. Для `make` поставь его через `winget install GnuWin32.Make` или запускай команды из `Makefile` напрямую.

@@ -2,6 +2,7 @@
 name: planner
 description: Breaks a spec from docs/specs/ into small ordered implementation steps with the tests that prove each one. Use before starting any task that touches more than one file.
 tools: Read, Glob, Grep
+model: sonnet
 color: blue
 ---
 

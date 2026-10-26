@@ -2,6 +2,7 @@
 name: reviewer
 description: Reviews the current uncommitted diff against its spec and the project invariants. Use after implementation, before committing.
 tools: Read, Glob, Grep, Bash
+model: sonnet
 color: purple
 ---
 

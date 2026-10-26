@@ -15,10 +15,11 @@ Rules:
 - "Out of scope" is mandatory. It stops the agent from gold-plating.
 - If the spec changes behaviour a judge could see in the demo, say so under "Demo impact".
 
+Mark the size at the top of the spec: `Size: small` or `Size: large` (rules in `CLAUDE.md`).
+
 When the spec is done:
 
-1. Run the `planner` subagent on it.
-2. Run the `test-writer` subagent.
-3. Implement until `make test` is green.
-4. Run the `reviewer` subagent, fix findings.
-5. Tick the acceptance criteria in the spec and commit with the `NNN:` prefix.
+- **Small:** write the tests, implement until `make test` is green, tick the criteria, commit.
+- **Large:** `planner` → `test-writer` → implement → `reviewer` → fix findings → tick the criteria → commit.
+
+Commit messages start with the `NNN:` prefix.
