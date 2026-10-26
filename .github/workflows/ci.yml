@@ -1,0 +1,20 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q -m "not slow"
+      - name: Eval (rules only, no API key)
+        if: hashFiles('eval/run.py') != ''
+        run: uv run python eval/run.py --mode rules
