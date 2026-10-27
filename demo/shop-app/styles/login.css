@@ -1,0 +1,19 @@
+.login {
+  max-width: 320px;
+  margin: 80px auto;
+  font-family: system-ui, sans-serif;
+}
+
+.login label {
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* Bug: the button should use the primary colour from the design tokens (#1a73e8). */
+.login-button {
+  background: #e8a31a;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+}
