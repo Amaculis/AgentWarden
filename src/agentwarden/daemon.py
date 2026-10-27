@@ -7,8 +7,10 @@ never `allow`. Errors never leak into the `reason` field shown to the agent.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
+import secrets
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -16,8 +18,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel
 
+from agentwarden import policy as policy_module
 from agentwarden import scanner
 from agentwarden.decide import decide, with_system_message
 from agentwarden.judge import SessionContext
@@ -67,6 +71,28 @@ def _default_db_path() -> Path:
     return Path.home() / ".agentwarden" / "audit.db"
 
 
+DASHBOARD_HTML = Path(__file__).resolve().parent / "dashboard" / "index.html"
+_PLACEHOLDER_HTML = (
+    "<!doctype html><title>AgentWarden</title><h1>AgentWarden</h1>"
+    "<p>Dashboard page not built yet. API: <code>/log</code>, <code>/scans</code>, "
+    "<code>/policy</code>.</p>"
+)
+
+
+class RuleRequest(BaseModel):
+    cwd: str
+    kind: str
+    value: str
+
+
+def write_ui_url(directory: Path, port: int, token: str) -> Path:
+    """Dashboard URL with the token in the #fragment (never sent to the server)."""
+    path = Path(directory) / "ui_url"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"http://127.0.0.1:{port}/#token={token}\n", encoding="utf-8")
+    return path
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     """Build the daemon app. Does not touch the filesystem: the store is
     opened on startup (lifespan), not here."""
@@ -76,6 +102,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.store = Store(resolved_db_path)
         app.state.scan_slots = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
+        app.state.ui_token = secrets.token_urlsafe(32)
+        port = int(os.environ.get("WARDEN_PORT") or 8765)
+        try:
+            url_file = write_ui_url(resolved_db_path.parent, port, app.state.ui_token)
+            logger.warning("AgentWarden dashboard: see %s for the URL with the UI token", url_file)
+        except OSError:
+            logger.exception("cannot write the dashboard URL file")
         yield
 
     app = FastAPI(lifespan=lifespan)
@@ -178,9 +211,61 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         request: Request,
         limit: int = Query(50, ge=1, le=500),
         session_id: str | None = None,
+        decision: str | None = None,
+        source: str | None = None,
+        since_id: int | None = Query(None, ge=0),
     ) -> list[dict]:
         store: Store = request.app.state.store
-        return store.recent_decisions(limit=limit, session_id=session_id)
+        return store.recent_decisions(
+            limit=limit,
+            session_id=session_id,
+            decision=decision,
+            source=source,
+            since_id=since_id,
+        )
+
+    @app.get("/scans")
+    async def scans(
+        request: Request,
+        limit: int = Query(50, ge=1, le=500),
+        session_id: str | None = None,
+    ) -> list[dict]:
+        store: Store = request.app.state.store
+        return store.recent_scans(limit=limit, session_id=session_id)
+
+    @app.get("/", response_class=HTMLResponse)
+    async def dashboard() -> HTMLResponse:
+        try:
+            html = DASHBOARD_HTML.read_text(encoding="utf-8")
+        except OSError:
+            html = _PLACEHOLDER_HTML
+        return HTMLResponse(html)
+
+    @app.get("/policy")
+    async def get_policy(cwd: str) -> dict:
+        path = policy_module.policy_file(cwd)
+        loaded = policy_module.load_policy(cwd)
+        return {"path": str(path), "exists": path.exists(), "policy": loaded.model_dump()}
+
+    @app.post("/policy/rules")
+    async def add_rule(body: RuleRequest, request: Request) -> dict:
+        token = request.headers.get("x-warden-token", "")
+        expected: str = request.app.state.ui_token
+        if not hmac.compare_digest(token.encode(), expected.encode()):
+            logger.warning("policy change refused: missing or wrong UI token")
+            raise HTTPException(status_code=403, detail="AgentWarden: UI token required")
+        path = policy_module.policy_file(body.cwd)
+        try:
+            added = policy_module.append_rule(path, body.kind, body.value)
+        except policy_module.PolicyWriteError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except OSError:
+            logger.exception("policy write failed")
+            raise HTTPException(
+                status_code=500, detail="AgentWarden: policy write failed"
+            ) from None
+        logger.warning("policy rule %s: %s -> %s", "added" if added else "exists", body.kind, path)
+        return {"ok": True, "added": added, "path": str(path)}
 
     return app
 

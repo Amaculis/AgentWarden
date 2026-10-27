@@ -146,22 +146,34 @@ class Store:
         finally:
             conn.close()
 
-    def recent_decisions(self, limit: int = 50, session_id: str | None = None) -> list[dict]:
+    def recent_decisions(
+        self,
+        limit: int = 50,
+        session_id: str | None = None,
+        decision: str | None = None,
+        source: str | None = None,
+        since_id: int | None = None,
+    ) -> list[dict]:
+        """Newest first. Optional filters; `since_id` returns only rows with a larger id."""
+        clauses, params = [], []
+        for column, value in (("session_id", session_id), ("decision", decision)):
+            if value is not None:
+                clauses.append(f"{column} = ?")
+                params.append(value)
+        if source is not None:
+            # "local"/"spark" live in decided_by; rules/policy/judge/failsafe/default in source.
+            clauses.append("(source = ? OR decided_by = ?)")
+            params.extend([source, source])
+        if since_id is not None:
+            clauses.append("id > ?")
+            params.append(since_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         conn = self._connect()
         try:
-            if session_id is not None:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM decisions WHERE session_id = ?
-                    ORDER BY id DESC LIMIT ?
-                    """,
-                    (session_id, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM decisions ORDER BY id DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
+            rows = conn.execute(
+                f"SELECT * FROM decisions {where} ORDER BY id DESC LIMIT ?",  # noqa: S608
+                (*params, limit),
+            ).fetchall()
         finally:
             conn.close()
 
@@ -206,6 +218,22 @@ class Store:
             conn.commit()
         finally:
             conn.close()
+
+    def recent_scans(self, limit: int = 50, session_id: str | None = None) -> list[dict]:
+        conn = self._connect()
+        try:
+            if session_id is None:
+                rows = conn.execute(
+                    "SELECT * FROM scans ORDER BY id DESC LIMIT ?", (limit,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM scans WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+                    (session_id, limit),
+                ).fetchall()
+        finally:
+            conn.close()
+        return [dict(row) for row in rows]
 
     def add_taint(self, session_id: str, source: str) -> None:
         conn = self._connect()

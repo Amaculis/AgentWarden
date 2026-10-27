@@ -213,6 +213,82 @@ def _any_domain_matches(event: ToolEvent, domains: list[str]) -> bool:
     return any(_host_matches_domain(host, domain) for domain in domains)
 
 
+# ---------------------------------------------------------------------------
+# Writing (spec 015: dashboard "always allow / always deny")
+# ---------------------------------------------------------------------------
+
+RULE_KINDS = (
+    "deny_commands",
+    "ask_commands",
+    "allow_commands",
+    "deny_paths",
+    "ask_paths",
+    "allow_paths",
+    "allow_domains",
+)
+MAX_RULE_CHARS = 200
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+class PolicyWriteError(ValueError):
+    """The rule or the existing policy file is invalid; nothing was written."""
+
+
+def policy_file(project_root: str) -> Path:
+    return Path(_policy_path(project_root, None))
+
+
+def append_rule(path: Path | str, kind: str, value: str) -> bool:
+    """Append `value` to list `kind`; `False` if already present. Atomic; never half-writes.
+
+    Leading `#` comment lines are kept; other comments are lost (no ruamel dependency).
+    Built-in hard denies run before the policy stage, so no rule written here can weaken them.
+    """
+    if kind not in RULE_KINDS:
+        raise PolicyWriteError(f"unknown rule kind: {kind!r}")
+    if not isinstance(value, str) or not value.strip():
+        raise PolicyWriteError("rule value is empty")
+    value = value.strip()
+    if len(value) > MAX_RULE_CHARS or _CONTROL_CHARS.search(value):
+        raise PolicyWriteError("rule value must be one line of at most 200 characters")
+    path = Path(path)
+    header: list[str] = []
+    data: dict = {"version": 1}
+    if path.exists():
+        try:
+            text = path.read_text(encoding="utf-8")
+            loaded = yaml.safe_load(text)
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise PolicyWriteError(f"existing policy is unreadable: {exc}") from exc
+        if loaded is None:
+            loaded = {"version": 1}
+        if not isinstance(loaded, dict):
+            raise PolicyWriteError("existing policy is not a mapping")
+        try:
+            Policy.model_validate(loaded)
+        except ValidationError as exc:
+            raise PolicyWriteError(f"existing policy is invalid: {exc}") from exc
+        data = loaded
+        for line in text.splitlines():
+            if not line.startswith("#"):
+                break
+            header.append(line)
+    rules = list(data.get(kind) or [])
+    if value in rules:
+        return False
+    rules.append(value)
+    data[kind] = rules
+    Policy.model_validate(data)
+    body = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    content = "\n".join([*header, body]) if header else body
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(content, encoding="utf-8", newline="\n")
+    os.replace(tmp, path)
+    _cache.pop(str(path), None)
+    return True
+
+
 def match(policy: Policy, event: ToolEvent) -> Verdict | None:
     """Match an event against the policy. Precedence: deny > ask > allow."""
     if _any_path_matches(event, policy.deny_paths, include_command=True) or _any_command_matches(
