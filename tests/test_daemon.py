@@ -218,3 +218,83 @@ def test_app_import_has_no_side_effects(tmp_path, monkeypatch):
         response = client.get("/health")
         assert response.status_code == 200
         assert db_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# spec 009: the daemon builds a `SessionContext` (last prompts, last actions)
+# and runs `decide()` with it in a worker thread.
+# ---------------------------------------------------------------------------
+
+
+def test_daemon_passes_session_context(tmp_path, monkeypatch):
+    import agentwarden.decide as decide_module
+    from agentwarden.providers.mock import MockProvider
+
+    prompt_path = tmp_path / "judge.md"
+    prompt_path.write_text(
+        "version: 1\n\nYou are the AgentWarden judge. Decide carefully.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", str(prompt_path))
+    monkeypatch.setenv("WARDEN_JUDGE", "mock")
+
+    held_provider = MockProvider(
+        [
+            '{"decision": "ask", "risk": 20, "reason": "first action"}',
+            '{"decision": "ask", "risk": 20, "reason": "second action"}',
+        ]
+    )
+    monkeypatch.setattr(decide_module, "get_provider", lambda name: held_provider)
+
+    session_id = "session-ctx-test-1"
+    prompt_payload = {
+        **USER_PROMPT_SUBMIT,
+        "session_id": session_id,
+        "prompt": "Please build the quarterly report, distinctive-prompt-marker-xyz",
+    }
+    first_action = {
+        **BASH_PRE_TOOL_USE,
+        "session_id": session_id,
+        "tool_input": {"command": "echo distinctive-first-action-marker"},
+        "tool_use_id": "tool-use-1",
+    }
+    second_action = {
+        **BASH_PRE_TOOL_USE,
+        "session_id": session_id,
+        "tool_input": {"command": "python scripts/build_report.py"},
+        "tool_use_id": "tool-use-2",
+    }
+
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        event_response = client.post("/event", json=prompt_payload)
+        assert event_response.status_code == 204
+
+        first_response = client.post("/decide", json=first_action)
+        assert first_response.status_code == 200
+
+        second_response = client.post("/decide", json=second_action)
+        assert second_response.status_code == 200
+
+    assert len(held_provider.calls) == 2
+
+    import json as _json
+
+    last_call_text = _json.dumps(held_provider.calls[-1])
+    assert "distinctive-prompt-marker-xyz" in last_call_text
+    assert "distinctive-first-action-marker" in last_call_text
+
+
+def test_context_failure_keeps_rules_deny(tmp_path, monkeypatch):
+    import agentwarden.daemon as daemon_module
+
+    def _broken(store, session_id):
+        raise RuntimeError("db locked")
+
+    monkeypatch.setattr(daemon_module, "session_context", _broken)
+    event = {**BASH_PRE_TOOL_USE, "tool_name": "Read", "tool_input": {"file_path": ".env"}}
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post("/decide", json=event)
+    assert response.status_code == 200
+    assert response.json()["decision"] == "deny"

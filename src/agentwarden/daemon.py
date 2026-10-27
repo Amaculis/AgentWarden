@@ -14,9 +14,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
 from agentwarden.decide import decide, with_system_message
+from agentwarden.judge import SessionContext
 from agentwarden.models import PromptEvent, ToolEvent, Verdict
 from agentwarden.models import failsafe as _bare_failsafe
 from agentwarden.store import Store
@@ -27,6 +29,15 @@ logger = logging.getLogger("agentwarden.daemon")
 def failsafe(reason: str) -> Verdict:
     """Fail-closed `ask` carrying the user-facing notification."""
     return with_system_message(_bare_failsafe(reason))
+
+
+def session_context(store: Store, session_id: str) -> SessionContext:
+    """Task (last 3 prompts) and last 5 actions of the session, oldest first."""
+    prompts = store.session_prompts(session_id)[-3:]
+    rows = store.recent_decisions(limit=5, session_id=session_id)
+    actions = [{"tool_name": r["tool_name"], "tool_input": r["tool_input"]} for r in reversed(rows)]
+    task = "\n---\n".join(prompts) or None
+    return SessionContext(task=task, recent_actions=actions)
 
 
 def _default_db_path() -> Path:
@@ -81,8 +92,16 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             logger.exception("Invalid ToolEvent payload for /decide")
             return failsafe("AgentWarden: invalid event")
 
+        # Context only feeds the judge; failing to build it must not stop the rules from
+        # running (a hard deny must stay a deny).
         try:
-            verdict = decide(tool_event)
+            context = session_context(store, tool_event.session_id)
+        except Exception:
+            logger.exception("session context unavailable")
+            context = None
+
+        try:
+            verdict = await run_in_threadpool(decide, tool_event, context)
         except Exception:
             logger.exception("decide() raised")
             verdict = failsafe("AgentWarden: internal error")

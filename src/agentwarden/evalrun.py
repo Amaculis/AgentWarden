@@ -21,8 +21,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-from agentwarden import rules
+from agentwarden import decide, rules
+from agentwarden.judge import SessionContext
 from agentwarden.models import DecisionValue, ToolEvent, Verdict
+from agentwarden.providers import Provider, get_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVAL_POLICY_PATH = REPO_ROOT / "eval" / "policy.eval.yaml"
@@ -48,7 +50,7 @@ DECISIONS: tuple[DecisionValue, ...] = ("allow", "deny", "ask")
 MODEL_ONLY_FIELDS = ("escalation_rate", "parse_failures", "cost_per_100", "local_share")
 COMPARED_METRICS = ("accuracy", "tamper", "detection_rate", "fpr", "ask_rate")
 
-Decider = Callable[[ToolEvent], Verdict | None]
+Decider = Callable[[ToolEvent, SessionContext], Verdict | None]
 
 
 class CaseError(Exception):
@@ -95,12 +97,38 @@ class CaseResult(BaseModel):
     holdout: bool = False
 
 
+def _rules_decider(event: ToolEvent, context: SessionContext) -> Verdict | None:
+    return rules.evaluate(event)
+
+
+def _judge_decider(provider: Provider) -> Decider:
+    def decider(event: ToolEvent, context: SessionContext) -> Verdict | None:
+        return decide.decide(event, context, provider=provider)
+
+    return decider
+
+
+# Model modes are resolved at run time (`_resolve_mode`): their provider comes from env.
 MODES: dict[str, Decider | None] = {
-    "rules": rules.evaluate,
+    "rules": _rules_decider,
     "local": None,
     "spark": None,
     "cascade": None,
 }
+PROVIDER_FOR_MODE = {"local": "local", "spark": "meta_api"}
+PROVIDER_ENV = {"local": "WARDEN_LOCAL_BASE", "spark": "META_API_KEY"}
+
+
+def _resolve_mode(mode: str) -> tuple[Decider | None, str | None]:
+    """(decider, None) when the mode can run, else (None, why not)."""
+    if MODES.get(mode) is not None:
+        return MODES[mode], None
+    if mode in PROVIDER_FOR_MODE:
+        provider = get_provider(PROVIDER_FOR_MODE[mode])
+        if provider is None:
+            return None, f"{PROVIDER_ENV[mode]} not set"
+        return _judge_decider(provider), None
+    return None, f"{mode} not implemented"
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +184,13 @@ def case_to_event(case: ActionCase, cwd: str) -> ToolEvent:
     )
 
 
+def case_to_context(case: ActionCase) -> SessionContext:
+    return SessionContext(
+        task=case.task,
+        recent_actions=[h.model_dump() for h in case.history],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Running
 # ---------------------------------------------------------------------------
@@ -169,7 +204,7 @@ def run_mode(
     for case in cases:
         start = time.perf_counter()
         try:
-            verdict = decider(case_to_event(case, EVAL_CWD))
+            verdict = decider(case_to_event(case, EVAL_CWD), case_to_context(case))
             if verdict is None:
                 decision, source, reason = "ask", "default", "unsettled by this mode"
             else:
@@ -444,10 +479,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     modes = list(MODES) if args.mode == "all" else [args.mode]
-    runnable = [m for m in modes if MODES[m] is not None]
+    deciders: dict[str, Decider] = {}
     for m in modes:
-        if MODES[m] is None:
-            print(f"{m}: not available (judge not implemented)")
+        decider, why_not = _resolve_mode(m)
+        if decider is None:
+            print(f"{m}: not available ({why_not})")
+        else:
+            deciders[m] = decider
+    runnable = list(deciders)
     if not runnable:
         return 2
 
@@ -473,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         for mode in runnable:
             mode_code = _run_actions_mode(
                 mode,
-                MODES[mode],
+                deciders[mode],
                 main_cases,
                 holdout_cases,
                 case_files,

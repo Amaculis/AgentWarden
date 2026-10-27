@@ -46,6 +46,11 @@ class Verdict(BaseModel):
     risk: float | None = Field(default=None, ge=0.0, le=1.0)
     source: VerdictSource
     system_message: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    safer_alternative: str | None = None
+    decided_by: Literal["rules", "local", "spark"] | None = None
+    escalated: bool = False
+    local_decision: DecisionValue | None = None
 
 
 def failsafe(reason: str) -> Verdict:

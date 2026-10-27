@@ -1,10 +1,8 @@
-"""Tests for agentwarden.evalrun (spec 007: eval runner, actions, rules mode).
+"""Tests for agentwarden.evalrun (spec 007: eval runner, actions, rules mode;
+spec 009: `Decider` gains a `SessionContext` argument and `local`/`spark` judge modes).
 
-Written against the interface the spec defines before `evalrun.py` exists, so the
-whole module fails to collect right now (ImportError on `agentwarden.evalrun`) --
-that is the correct failure mode until the module is implemented. No real model,
-no network. Every test that writes results points `--results-dir` at `tmp_path`
-and never touches `eval/results` or `eval/cases`.
+No real model, no network. Every test that writes results points `--results-dir` at
+`tmp_path` and never touches `eval/results` or `eval/cases`.
 """
 
 from __future__ import annotations
@@ -71,15 +69,15 @@ def _write_jsonl(path: Path, rows: list[dict]) -> Path:
     return path
 
 
-def _ok_decider(event):
+def _ok_decider(event, context):
     return Verdict(decision="allow", reason="ok", risk=0.0, source="rules")
 
 
-def _none_decider(event):
+def _none_decider(event, context):
     return None
 
 
-def _raising_decider(event):
+def _raising_decider(event, context):
     raise RuntimeError("boom")
 
 
@@ -578,7 +576,7 @@ def test_metrics_model_only_fields_null_for_rules():
 
 
 def test_tamper_gate_exit_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    def _ask_everything(event):
+    def _ask_everything(event, context):
         return Verdict(decision="ask", reason="x", risk=None, source="rules")
 
     monkeypatch.setitem(MODES, "rules", _ask_everything)
@@ -797,15 +795,17 @@ def test_main_prints_previous_none_when_file_unreadable(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("mode", ["local", "spark", "cascade"])
-def test_unavailable_mode_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture, mode: str):
+def test_eval_local_mode_unavailable_without_base(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("WARDEN_LOCAL_BASE", raising=False)
     cases_file = _write_jsonl(tmp_path / "cases.jsonl", [_case_dict("benign-040")])
     code = main(
         [
             "--set",
             "actions",
             "--mode",
-            mode,
+            "local",
             "--cases",
             str(cases_file),
             "--results-dir",
@@ -814,7 +814,52 @@ def test_unavailable_mode_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture, 
     )
     assert code == 2
     captured = capsys.readouterr()
-    assert "not available" in captured.out
+    assert "local: not available (WARDEN_LOCAL_BASE not set)" in captured.out
+    assert not (tmp_path / "results").exists()
+
+
+def test_eval_spark_mode_unavailable_without_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    cases_file = _write_jsonl(tmp_path / "cases.jsonl", [_case_dict("benign-040")])
+    code = main(
+        [
+            "--set",
+            "actions",
+            "--mode",
+            "spark",
+            "--cases",
+            str(cases_file),
+            "--results-dir",
+            str(tmp_path / "results"),
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "spark: not available (META_API_KEY not set)" in captured.out
+    assert not (tmp_path / "results").exists()
+
+
+def test_eval_cascade_mode_unavailable_not_implemented(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    cases_file = _write_jsonl(tmp_path / "cases.jsonl", [_case_dict("benign-040")])
+    code = main(
+        [
+            "--set",
+            "actions",
+            "--mode",
+            "cascade",
+            "--cases",
+            str(cases_file),
+            "--results-dir",
+            str(tmp_path / "results"),
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "cascade: not available (cascade not implemented)" in captured.out
     assert not (tmp_path / "results").exists()
 
 
@@ -858,7 +903,11 @@ def test_no_cases_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture):
     assert not (tmp_path / "results").exists()
 
 
-def test_mode_all_runs_rules_only(tmp_path: Path, capsys: pytest.CaptureFixture):
+def test_mode_all_runs_rules_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("WARDEN_LOCAL_BASE", raising=False)
+    monkeypatch.delenv("META_API_KEY", raising=False)
     cases_file = _write_jsonl(tmp_path / "cases.jsonl", [_case_dict("benign-050")])
     results_dir = tmp_path / "results"
     code = main(
@@ -875,17 +924,69 @@ def test_mode_all_runs_rules_only(tmp_path: Path, capsys: pytest.CaptureFixture)
     )
     assert code == 0
     captured = capsys.readouterr()
-    for mode in ("local", "spark", "cascade"):
-        assert f"{mode}: not available (judge not implemented)" in captured.out
+    assert "local: not available (WARDEN_LOCAL_BASE not set)" in captured.out
+    assert "spark: not available (META_API_KEY not set)" in captured.out
+    assert "cascade: not available (cascade not implemented)" in captured.out
     assert list(results_dir.glob("*-actions-rules.json"))
     assert not list(results_dir.glob("*-actions-local.json"))
 
 
-def test_modes_registers_only_rules():
+def test_modes_has_all_keys():
+    assert set(MODES) == {"rules", "local", "spark", "cascade"}
     assert MODES["rules"] is not None
-    assert MODES["local"] is None
-    assert MODES["spark"] is None
-    assert MODES["cascade"] is None
+
+
+# ---------------------------------------------------------------------------
+# spec 009: judge modes (local/spark) resolve a provider at run time
+# ---------------------------------------------------------------------------
+
+
+def test_eval_judge_mode_with_mock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    import agentwarden.evalrun as evalrun_module
+    from agentwarden.providers.mock import MockProvider
+
+    prompt_path = tmp_path / "judge.md"
+    prompt_path.write_text(
+        "version: 1\n\nYou are the AgentWarden judge. Decide allow, deny or ask.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", str(prompt_path))
+
+    mock_provider = MockProvider(['{"decision": "allow", "risk": 5, "reason": "looks fine"}'])
+    monkeypatch.setattr(
+        evalrun_module, "get_provider", lambda name: mock_provider if name == "meta_api" else None
+    )
+
+    cases_file = _write_jsonl(
+        tmp_path / "cases.jsonl",
+        [
+            _case_dict(
+                "benign-060",
+                label="allow",
+                category="benign",
+                tool_name="Bash",
+                tool_input={"command": "echo hello"},
+            )
+        ],
+    )
+    results_dir = tmp_path / "results"
+    code = main(
+        [
+            "--set",
+            "actions",
+            "--mode",
+            "spark",
+            "--cases",
+            str(cases_file),
+            "--results-dir",
+            str(results_dir),
+        ]
+    )
+    assert code == 0
+    assert list(results_dir.glob("*-actions-spark.json"))
+    assert mock_provider.calls
 
 
 def test_main_survives_cp1252_console(tmp_path: Path):

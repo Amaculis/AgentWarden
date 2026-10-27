@@ -4,6 +4,7 @@ import pytest
 
 from agentwarden.decide import decide
 from agentwarden.models import ToolEvent
+from agentwarden.providers.mock import MockProvider
 from tests.fixtures import BASH_PRE_TOOL_USE, EDIT_PRE_TOOL_USE, WRITE_PRE_TOOL_USE
 
 # spec 003: no rule matches these (Bash "echo ..." is not in the safe-command
@@ -175,3 +176,95 @@ def test_policy_sourced_system_message_has_policy_label(tmp_path, monkeypatch):
     assert verdict.source == "policy"
     assert verdict.system_message is not None
     assert verdict.system_message.endswith("(policy)")
+
+
+# ---------------------------------------------------------------------------
+# spec 009: judge thresholds and provider wiring.
+# ---------------------------------------------------------------------------
+
+
+def _unsettled_event() -> ToolEvent:
+    return ToolEvent.model_validate(BASH_PRE_TOOL_USE)
+
+
+def _write_real_judge_prompt(tmp_path) -> str:
+    path = tmp_path / "judge.md"
+    path.write_text(
+        "version: 1\n\nYou are the AgentWarden judge. Decide carefully.\n",
+        encoding="utf-8",
+    )
+    return str(path)
+
+
+def test_judge_allow_above_risk_threshold_is_ask(tmp_path, monkeypatch):
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", _write_real_judge_prompt(tmp_path))
+    provider = MockProvider(['{"decision": "allow", "risk": 50, "reason": "borderline"}'])
+
+    verdict = decide(_unsettled_event(), None, provider)
+
+    assert verdict.decision == "ask"
+
+
+def test_judge_allow_low_confidence_is_ask(tmp_path, monkeypatch):
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", _write_real_judge_prompt(tmp_path))
+    provider = MockProvider(
+        ['{"decision": "allow", "risk": 10, "confidence": 0.3, "reason": "not sure"}']
+    )
+
+    verdict = decide(_unsettled_event(), None, provider)
+
+    assert verdict.decision == "ask"
+
+
+def test_judge_allow_low_risk_high_confidence_is_allow(tmp_path, monkeypatch):
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", _write_real_judge_prompt(tmp_path))
+    provider = MockProvider(
+        ['{"decision": "allow", "risk": 10, "confidence": 0.9, "reason": "looks fine"}']
+    )
+
+    verdict = decide(_unsettled_event(), None, provider)
+
+    assert verdict.decision == "allow"
+
+
+def test_rules_hard_deny_never_reaches_judge_provider(tmp_path, monkeypatch):
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", _write_real_judge_prompt(tmp_path))
+    provider = MockProvider(['{"decision": "allow", "risk": 1, "reason": "n/a"}'])
+
+    verdict = decide(_secret_read_event(), None, provider)
+
+    assert verdict.decision == "deny"
+    assert verdict.source == "rules"
+    assert provider.calls == []
+
+
+def test_unconfigured_judge_keeps_default_ask(monkeypatch):
+    monkeypatch.delenv("WARDEN_JUDGE", raising=False)
+
+    verdict = decide(_unsettled_event(), None, None)
+
+    assert verdict.decision == "ask"
+    assert verdict.source == "default"
+
+
+def test_policy_verdict_never_reaches_judge(tmp_path, monkeypatch):
+    policy = tmp_path / "policy.yaml"
+    policy.write_text('version: 1\ndeny_commands: ["terraform apply"]\n', encoding="utf-8")
+    monkeypatch.setenv("WARDEN_POLICY", str(policy))
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", _write_real_judge_prompt(tmp_path))
+    provider = MockProvider(['{"decision": "allow", "risk": 0, "reason": "x"}'])
+    event = ToolEvent.model_validate(
+        {**BASH_PRE_TOOL_USE, "tool_input": {"command": "terraform apply -auto-approve"}}
+    )
+    verdict = decide(event, None, provider=provider)
+    assert verdict.decision == "deny"
+    assert verdict.source == "policy"
+    assert provider.calls == []
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-5"])
+def test_non_finite_threshold_env_falls_back(tmp_path, monkeypatch, bad):
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", _write_real_judge_prompt(tmp_path))
+    monkeypatch.setenv("WARDEN_ALLOW_MAX_RISK", bad)
+    provider = MockProvider(['{"decision": "allow", "risk": 50, "confidence": 0.9, "reason": "x"}'])
+    assert decide(_unsettled_event(), None, provider=provider).decision == "ask"
