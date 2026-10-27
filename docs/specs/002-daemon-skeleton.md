@@ -112,25 +112,25 @@ Every `/decide` failure returns `200` with a `failsafe` verdict (`decision: "ask
 
 ## Acceptance criteria
 
-- [ ] `test_tool_event_accepts_real_payloads` — the captured Bash/Read/Write/Edit payloads from the `hook-protocol` skill parse into `ToolEvent`; extras ignored.
-- [ ] `test_prompt_event_accepts_real_payload` — captured UserPromptSubmit payload parses into `PromptEvent`.
-- [ ] `test_verdict_risk_bounds` — `risk` outside 0–1 is rejected.
-- [ ] `test_decide_default_is_ask` — `decide()` returns `ask`, source `default`, for any tool.
-- [ ] `test_store_roundtrip` — `add_decision` then `recent_decisions` returns the row with `tool_input` decoded back to a dict; newest first; `limit` and `session_id` filter work.
-- [ ] `test_store_session_prompts` — prompts returned oldest first, only for the given session.
-- [ ] `test_decide_endpoint_returns_ask_and_logs` — `POST /decide` with a real payload → `200`, `decision == "ask"`, one row in `/log`.
-- [ ] `test_decide_invalid_json_is_ask` — garbage body → `200`, `ask`, source `failsafe`, nothing logged.
-- [ ] `test_decide_invalid_event_is_ask` — valid JSON missing `tool_name` → `200`, `ask`, source `failsafe`.
-- [ ] `test_decide_exception_is_ask` — `decide()` monkeypatched to raise → `200`, `ask`, source `failsafe`, row logged with source `failsafe`; reason contains no exception text.
-- [ ] `test_store_failure_is_ask` — `Store.add_decision` monkeypatched to raise, with `decide()` patched to return `allow` → response is `ask`, source `failsafe`.
-- [ ] `test_event_endpoint_stores_prompt` — `POST /event` → `204`; prompt visible via `session_prompts`.
-- [ ] `test_event_invalid_is_422`.
-- [ ] `test_log_limit_bounds` — `limit=0` and `limit=501` → `422`.
-- [ ] `test_health`.
-- [ ] `test_app_import_has_no_side_effects` — importing `agentwarden.daemon` with `AGENTWARDEN_DB` pointing into `tmp_path` creates no file until the app starts.
-- [ ] All tests use `tmp_path` DBs; none touch `~/.agentwarden` or the network.
-- [ ] `make test` green, `make lint` clean.
-- [ ] Manual: `make run`, `curl` a captured payload to `/decide`, see it in `/log`.
+- [x] `test_tool_event_accepts_real_payloads` — the captured Bash/Read/Write/Edit payloads from the `hook-protocol` skill parse into `ToolEvent`; extras ignored.
+- [x] `test_prompt_event_accepts_real_payload` — captured UserPromptSubmit payload parses into `PromptEvent`.
+- [x] `test_verdict_risk_bounds` — `risk` outside 0–1 is rejected.
+- [x] `test_decide_default_is_ask` — `decide()` returns `ask`, source `default`, for any tool.
+- [x] `test_store_roundtrip` — `add_decision` then `recent_decisions` returns the row with `tool_input` decoded back to a dict; newest first; `limit` and `session_id` filter work.
+- [x] `test_store_session_prompts` — prompts returned oldest first, only for the given session.
+- [x] `test_decide_endpoint_returns_ask_and_logs` — `POST /decide` with a real payload → `200`, `decision == "ask"`, one row in `/log`.
+- [x] `test_decide_invalid_json_is_ask` — garbage body → `200`, `ask`, source `failsafe`, nothing logged.
+- [x] `test_decide_invalid_event_is_ask` — valid JSON missing `tool_name` → `200`, `ask`, source `failsafe`.
+- [x] `test_decide_exception_is_ask` — `decide()` monkeypatched to raise → `200`, `ask`, source `failsafe`, row logged with source `failsafe`; reason contains no exception text.
+- [x] `test_store_failure_is_ask` — `Store.add_decision` monkeypatched to raise, with `decide()` patched to return `allow` → response is `ask`, source `failsafe`.
+- [x] `test_event_endpoint_stores_prompt` — `POST /event` → `204`; prompt visible via `session_prompts`.
+- [x] `test_event_invalid_is_422`.
+- [x] `test_log_limit_bounds` — `limit=0` and `limit=501` → `422`.
+- [x] `test_health`.
+- [x] `test_app_import_has_no_side_effects` — importing `agentwarden.daemon` with `AGENTWARDEN_DB` pointing into `tmp_path` creates no file until the app starts.
+- [x] All tests use `tmp_path` DBs; none touch `~/.agentwarden` or the network.
+- [x] `make test` green, `make lint` clean.
+- [ ] Manual: `make run`, `curl` a captured payload to `/decide`, see it in `/log`. (Sandbox blocks binding a port/curl in this session — needs to be run by hand.)
 
 ## Out of scope
 
