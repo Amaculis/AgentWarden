@@ -1,51 +1,47 @@
-# Session state — 2026-10-28
+# Session state — 2026-10-28 (night run, autonomous)
 
-Done today:
+Done (commits on main, not pushed):
 
-- Spec 006 (98454af): self-protection for `hooks/`.
-- Spec 007: eval runner. `src/agentwarden/evalrun.py` + `eval/run.py` (thin entry). Actions set,
-  `rules` mode only; `local/spark/cascade` registered as `None` in `MODES` and report "not
-  available"; `--set content` exits 2. Forces `eval/policy.eval.yaml` via `WARDEN_POLICY` for the
-  run. Writes `eval/results/<date>-<commit>-actions-<mode>.json`, compares with previous run,
-  tamper gate (<100% → exit 1). 36 new tests (339 total), lint clean.
-  Baseline on `eval/candidates/tamper.jsonl`: 15 cases, acc 1.000, tamper 15/15, exit 0.
+- 007 fix: eval runner survived cp1252 consoles; seed candidates
+  `eval/candidates/20261028-seed.jsonl` (75 action cases) and
+  `eval/candidates/content-20261028-seed.jsonl` (40 scanner docs, 20/20).
+- 008: policy `deny_paths`/`ask_paths` also match paths inside Bash/PowerShell commands (never
+  `allow_paths`).
+- 009: judge v1 — `redact.py`, `providers/` (base, mock, openai_compat on plain httpx, meta_api,
+  local), `judge.py`, thresholds in `decide.py`, session context in the daemon, eval modes
+  `spark`/`local`. Reviewed (Opus reviewer); all findings fixed (redaction gaps, ReDoS, test env
+  isolation in `tests/conftest.py`, total HTTP deadline, nan/inf env, conflicting verdict JSON).
+- 010: cascade — `cascade.py` (local first, Spark on low confidence / mid risk / local failure,
+  7 s budget, `WARDEN_LOCAL_TIMEOUT` 3 s), `WARDEN_JUDGE=cascade`, audit columns
+  `decided_by/escalated/local_decision/confidence`, eval `local_share`/`escalation_rate`.
+- 011: `on_prompt.py` POSTs the prompt to `/event` (loopback only, 2 s) so the judge has the task.
+- 012: verdict cache (`providers/cache.py`; eval always, daemon with `WARDEN_CACHE=on`),
+  `cost_per_100` in eval.
+- 013: injection scanner — `hooks/on_read.py` (PostToolUse Read|WebFetch), daemon `/scan`,
+  `scanner.py`, session taints shown to the judge, `make eval-scan` (`evalscan.py`). Reviewed;
+  findings fixed (NUL bypass, unverified quote, redaction before cut, scan concurrency cap,
+  bounded extraction, unique taints).
+- chore: all files normalised to LF, `.gitattributes` pins `eol=lf`.
 
-- Eval runner fix: mismatch/compare lines used `→` and crashed on a cp1252 console
-  (Windows default); now `->` + `stdout.reconfigure(errors="backslashreplace")`, regression test
-  added (340 tests). Also fixed a ruff I001 in `tests/test_evalrun.py` left from 007.
-- Seed candidates: `eval/candidates/20261028-seed.jsonl` (redteam subagent), 75 cases: 50 benign
-  (48 allow / 2 ask), secrets 4, exfiltration 4, destruction 3, persistence 3, drift 3,
-  injection 3, judge_attack 2, borderline 3; 9 policy-dependent. Combined with tamper: 90 cases,
-  rules mode acc 0.611, tamper 15/15, detect 1.000, FPR 0.540 (expected: unsettled -> ask until
-  the judge exists), settled by rules 0.589.
+Waiting for the human:
 
-In progress: nothing.
-
-Next:
-
-1. Human: review labels in `eval/candidates/tamper.jsonl` and `20261028-seed.jsonl`, promote
-   into `eval/cases/` (keep ~20% in `holdout.jsonl`), then `make eval-rules` for the first
-   committed baseline. Label to check: `benign-exportdotenvlocal-164` (labelled allow, built-in
-   secrets hard deny fires on `.env.local` -- probably relabel ask/deny).
-2. Decide on the policy gap below (small spec if yes).
-3. Then the cascade judge (`docs/specs/backlog/cascade-judge.md`) — adds `local/spark/cascade`
-   deciders to `evalrun.MODES`. Large, Opus.
+1. Write `prompts/judge.md` and `prompts/scanner.md` — drafts in `docs/handoff/`. Until then the
+   judge and scanner return fail-safe `ask` / no warning ("prompt not written").
+2. Review labels in `eval/candidates/*.jsonl`, promote to `eval/cases/` and `eval/content/`
+   (~20% to `holdout.jsonl`). Check `benign-exportdotenvlocal-164` (built-in secrets deny fires).
+3. Meta API credits → set `META_API_KEY`, run the `meta-api` skill first-request checklist
+   (base URL, model id `muse-spark-1.2`, JSON mode), then `make eval MODE=spark`.
+4. Local-model spike (`docs/specs/backlog/local-model-spike.md`) → `WARDEN_LOCAL_BASE`/`MODEL`,
+   then `make eval MODE=cascade` and `make eval-scan`.
+5. Manual checks: real PostToolUse payload shape (`tool_response`) for Read and WebFetch;
+   demo README warning in a real session; spec 005 leftover (hook `allow` vs settings deny).
+6. Note: a subagent ran `pip install openai` into the system Python (C:\Python313) during the
+   night; the code no longer imports `openai` (providers use httpx). Uninstall if unwanted.
 
 Open problems:
 
-- Policy `deny_paths`/`ask_paths` match only `tool_input.file_path`; a Bash command touching the
-  same path (`cat secrets/stripe_key.txt`, case `secrets-dir-102`) is unsettled -> `ask`, not
-  `deny`. Fix would extract path-like tokens from Bash commands; must not false-positive on
-  e.g. `manage.py makemigrations` vs `ask_paths: migrations/` (case `benign-makemigrationscmd-152`).
-
-- `uv` is not on PATH in the Claude Code shell on this machine; tests/lint were run with
-  `python -m pytest` / `python -m ruff` (same checks as `make`). `make eval-rules` itself was
-  verified via `PYTHONPATH=src python eval/run.py ...` (empty `eval/cases/` → "no cases found",
-  exit 2).
-- Hook test suite takes ~34 s total, mostly loopback refusals on Windows. Acceptable for now.
-- `on_prompt.py` still only records locally; wiring it to `/event` waits for the judge spec.
-- Future judge/cascade must keep `/decide` under ~7 s so the hook's 8 s deadline holds.
-- Meta API credits pending; `meta-api` skill VERIFY items unconfirmed.
-- Spec 005 has one unticked manual item left: confirm whether a hook `permissionDecision:
-  "allow"` overrides `deny` rules in `settings.json` permissions (relevant to
-  `WARDEN_ALLOW=explicit`). CLI (non-VS Code) rendering of `systemMessage` still unverified.
+- `uv` is not on PATH in the Claude Code shell; tests/lint run with `python -m pytest` /
+  `python -m ruff`.
+- Git Bash heredocs turn `\\` into `\` (corrupted `\n`/`\x00` in edits twice). Write Python edit
+  scripts with the Write tool, or use Edit, when the text contains backslashes.
+- Hook suite ~45 s (loopback refusals on Windows).
