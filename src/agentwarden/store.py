@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS decisions (
 """
 
 
+# Columns added after spec 002; existing databases get them via ALTER TABLE (spec 010).
+_ADDED_DECISION_COLUMNS = {
+    "confidence": "REAL",
+    "decided_by": "TEXT",
+    "escalated": "INTEGER",
+    "local_decision": "TEXT",
+}
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -54,6 +63,10 @@ class Store:
         conn = self._connect()
         try:
             conn.executescript(_SCHEMA)
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(decisions)")}
+            for name, sql_type in _ADDED_DECISION_COLUMNS.items():
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE decisions ADD COLUMN {name} {sql_type}")
             conn.commit()
         finally:
             conn.close()
@@ -85,8 +98,9 @@ class Store:
                 """
                 INSERT INTO decisions (
                     created_at, session_id, prompt_id, tool_use_id, tool_name,
-                    tool_input_json, cwd, decision, reason, risk, source, latency_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    tool_input_json, cwd, decision, reason, risk, source, latency_ms,
+                    confidence, decided_by, escalated, local_decision
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     _now(),
@@ -101,6 +115,10 @@ class Store:
                     verdict.risk,
                     verdict.source,
                     latency_ms,
+                    verdict.confidence,
+                    verdict.decided_by,
+                    int(verdict.escalated),
+                    verdict.local_decision,
                 ),
             )
             conn.commit()
