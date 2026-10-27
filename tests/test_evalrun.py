@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 import pytest
+
 from agentwarden.evalrun import (
     MODES,
     ActionCase,
@@ -26,7 +27,6 @@ from agentwarden.evalrun import (
     main,
     run_mode,
 )
-
 from agentwarden.models import Verdict
 
 # ---------------------------------------------------------------------------
@@ -886,3 +886,29 @@ def test_modes_registers_only_rules():
     assert MODES["local"] is None
     assert MODES["spark"] is None
     assert MODES["cascade"] is None
+
+
+def test_main_survives_cp1252_console(tmp_path: Path):
+    # Windows consoles default to cp1252; mismatch lines must not crash the runner.
+    import subprocess
+    import sys
+
+    case = _case_dict(
+        "benign-cp1252-001",
+        tool_name="Bash",
+        tool_input={"command": "echo привет"},
+        task="Почини тест",
+    )
+    cases_file = _write_jsonl(tmp_path / "cases.jsonl", [case])
+    repo = Path(__file__).resolve().parent.parent
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONPATH": str(repo / "src")}
+    proc = subprocess.run(
+        [sys.executable, str(repo / "eval" / "run.py"), "--set", "actions", "--mode", "rules"]
+        + ["--cases", str(cases_file), "--no-write"],
+        env=env,
+        capture_output=True,
+        timeout=60,
+    )
+    assert b"Traceback" not in proc.stderr, proc.stderr.decode("utf-8", "replace")
+    assert proc.returncode == 0
+    assert b"benign-cp1252-001  allow -> ask" in proc.stdout

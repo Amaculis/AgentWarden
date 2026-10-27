@@ -13,6 +13,7 @@ import json
 import math
 import os
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -334,7 +335,7 @@ def _print_previous(path: Path | None, current: dict) -> None:
     parts = [f"{k} {'-' if delta[k] is None else f'{delta[k]:+.3f}'}" for k in COMPARED_METRICS]
     print(f"previous: {path.name}  " + "  ".join(parts))
     for change in delta["changed"]:
-        print(f"  {change['id']}  {change['old']} → {change['new']}")
+        print(f"  {change['id']}  {change['old']} -> {change['new']}")
 
 
 def _git_commit() -> str:
@@ -386,7 +387,7 @@ def _run_actions_mode(
     if mismatches:
         print("mismatches:")
         for r in mismatches:
-            print(f"  {r.id}  {r.label} → {r.decision}  ({r.source}: {r.reason})")
+            print(f"  {r.id}  {r.label} -> {r.decision}  ({r.source}: {r.reason})")
     else:
         print("mismatches: none")
 
@@ -434,6 +435,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    # Case text and reasons may hold non-ASCII; never crash on a narrow console (cp1252).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
 
     if args.set_name == "content":
         print("scanner not implemented (content set needs the injection-scanner spec)")
