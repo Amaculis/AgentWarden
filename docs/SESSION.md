@@ -2,31 +2,35 @@
 
 Done today:
 
-- Spec 006 (98454af): self-protection for `hooks/`. `rules.py` gained `_hooks_rule`, denying
-  read/write/edit and shell rm/mv/del against the project's top-level `hooks/` directory, same
-  hard-deny tier as `.agentwarden/` and `.claude/settings*.json`; user policy allow rules can't
-  override it. 12 new tests (303 total), lint clean. Closes SESSION.md item 2 from last session.
+- Spec 006 (98454af): self-protection for `hooks/`.
+- Spec 007: eval runner. `src/agentwarden/evalrun.py` + `eval/run.py` (thin entry). Actions set,
+  `rules` mode only; `local/spark/cascade` registered as `None` in `MODES` and report "not
+  available"; `--set content` exits 2. Forces `eval/policy.eval.yaml` via `WARDEN_POLICY` for the
+  run. Writes `eval/results/<date>-<commit>-actions-<mode>.json`, compares with previous run,
+  tamper gate (<100% → exit 1). 36 new tests (339 total), lint clean.
+  Baseline on `eval/candidates/tamper.jsonl`: 15 cases, acc 1.000, tamper 15/15, exit 0.
 
 In progress: nothing.
 
 Next:
 
-1. Eval runner `eval/run.py` (Makefile's `eval`, `eval-rules`, `eval-scan` targets reference it,
-   file still missing) — needed to run `eval/candidates/tamper.jsonl` (15 cases, spec 004) and any
-   future eval sets. Touches multiple modes (rules/local/spark/cascade) and metrics — likely
-   **Size: large**, so write the spec on Opus, then `planner` → `test-writer` → implement →
-   `reviewer`. Read the `eval-case` skill first for the case schema and metrics before writing the
-   spec.
-2. After the eval runner exists: promote the reviewed `eval/candidates/tamper.jsonl` cases into
-   `eval/cases/` and run `make eval-rules` to get a real baseline number.
+1. Human: review `eval/candidates/tamper.jsonl` labels and promote into `eval/cases/` (agents must
+   not edit `eval/cases/`), then `make eval-rules` for the first committed baseline.
+2. Seed benign + other-category action cases (~60% benign) via `redteam` subagent into
+   `eval/candidates/` so FPR means something.
+3. Then the cascade judge (`docs/specs/backlog/cascade-judge.md`) — adds `local/spark/cascade`
+   deciders to `evalrun.MODES`. Large, Opus.
 
 Open problems:
 
-- Hook test suite takes ~34 s total for the full suite, mostly because many tests connect to a
-  closed loopback port and Windows takes ~2 s to refuse. Acceptable for now.
+- `uv` is not on PATH in the Claude Code shell on this machine; tests/lint were run with
+  `python -m pytest` / `python -m ruff` (same checks as `make`). `make eval-rules` itself was
+  verified via `PYTHONPATH=src python eval/run.py ...` (empty `eval/cases/` → "no cases found",
+  exit 2).
+- Hook test suite takes ~34 s total, mostly loopback refusals on Windows. Acceptable for now.
 - `on_prompt.py` still only records locally; wiring it to `/event` waits for the judge spec.
 - Future judge/cascade must keep `/decide` under ~7 s so the hook's 8 s deadline holds.
 - Meta API credits pending; `meta-api` skill VERIFY items unconfirmed.
-- Spec 005 has one unticked manual item left: confirm in the Claude Code hooks docs whether a hook
-  `permissionDecision: "allow"` overrides `deny` rules in `settings.json` permissions (relevant to
-  `WARDEN_ALLOW=explicit`). Also CLI (non-VS Code) rendering of `systemMessage` still unverified.
+- Spec 005 has one unticked manual item left: confirm whether a hook `permissionDecision:
+  "allow"` overrides `deny` rules in `settings.json` permissions (relevant to
+  `WARDEN_ALLOW=explicit`). CLI (non-VS Code) rendering of `systemMessage` still unverified.
