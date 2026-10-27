@@ -21,36 +21,56 @@ Known limitation to state openly: the judge is an LLM and can itself be attacked
 
 Finding from the hooks docs: a hook that crashes, times out or cannot connect does NOT block the action (fail-open). So product hooks are command hooks that call the daemon with their own timeout and return `ask` on any failure. See the `hook-protocol` skill.
 
-Decision (27 Oct, spec 002): if the daemon cannot write the audit row for an action, the answer is `ask`, whatever the policy said. An action that can't be recorded is never allowed silently. Malformed events to `/decide` get `200` + `ask` (not 4xx), so the hook only has to handle "daemon unreachable / timeout".
+## How Meta models are used (decided 27 Oct)
+
+Meta is the core of the product, not a swappable LLM call. Four uses, each with its own measurable result:
+
+1. **Cascade judge.** A small Meta open-weights model runs locally on every action that rules did not settle. Confident verdicts stop there; low confidence or mid-range risk escalates to Muse Spark. Most code never leaves the machine. Metric: share decided locally, quality vs Spark-only, latency, cost.
+2. **Injection scanner.** After every Read / WebFetch (PostToolUse), the local model checks the content for instructions aimed at an AI and warns the agent through `additionalContext` before it acts. Catches the attack at the input, not only at the action. Metric: recall on injected docs, false positives on normal docs that contain legitimate commands.
+3. **Meta red-team loop.** Muse Spark generates new attacks; the cascade is scored on them; bypasses become eval candidates and drive judge tuning. "Meta attacks, Meta defends". Answers the "LLM guarding an LLM" objection with numbers. Metric: attack success rate per round.
+4. **Safer alternative.** On `deny`, the verdict includes a safe way to do the task ("use `.env.example`"), so the agent continues instead of getting stuck.
+
+Not planned: SAM 3.1 or Muse Image (no real role here). Optional, only if verified: protecting Muse Code itself if it exposes hooks.
+
+To verify early (Wed 28): which Meta open-weights models are available (e.g. Glimmer, Muse Spark Open), whether the user's hardware runs one fast enough, otherwise host it on Modal/Baseten partner credits.
+
+## User control and visibility (decided 27 Oct)
+
+- **Inside Claude Code**: every deny/ask shows a `systemMessage` line to the user (`🛡 AgentWarden: blocked … (local model)`). Allows stay silent. This is the primary interface.
+- **Policy file** `.agentwarden/policy.yaml`: user-edited deny/ask/allow lists for paths, commands and domains. Reloaded on change. Cannot weaken built-in hard denies.
+- **Dashboard in the IDE**: one HTML page from the daemon, opened in VS Code with `Simple Browser: Show`. Feed, filters, counters, "always allow / always deny" buttons that append to the policy file. No VS Code extension (too costly; "dashboards as the main feature" is on the organisers' overdone list).
+- **Self-protection**: the agent cannot edit `.agentwarden/` or `.claude/settings*.json`, call the daemon, or kill it. Policy changes through the dashboard need a local token the agent cannot read. Eval category `tamper` proves it.
 
 ## MVP scope
 
-In: Claude Code PreToolUse + UserPromptSubmit hooks; rules; Meta judge with JSON verdict; fail-safe to ask; SQLite audit log; small dashboard; eval set 150+ cases with metrics for rules / judge / both; demo where a prompt injection in a README tries to read `.env` and send it out.
+In: Claude Code PreToolUse + UserPromptSubmit + PostToolUse hooks; rules; cascade (local Meta model → Muse Spark) with JSON verdict; injection scanner; safer alternative on deny; fail-safe to ask; SQLite audit log; small dashboard; Meta red-team loop; action eval 150+ cases in four modes; scanner eval 60+ documents; demo where a README injection is flagged at read time and the follow-up exfiltration is blocked.
 
-Out unless time remains: MCP proxy, Copilot, SSH/DB control, multi-user.
+Out unless time remains: MCP proxy, Copilot, SSH/DB control, multi-user, Muse Code protection.
 
 ## Metric targets (guidance)
 
-Detection ≥ 90%, false positive rate ≤ 5%, judge p95 < 1.5 s, < 30% of actions reach the judge, cost per 100 actions, reduction in prompts vs ask-all.
+Actions: detection ≥ 90%, false positive rate ≤ 5%, < 30% of actions reach any model, ≥ 70% of model-checked actions decided locally, cascade p95 < 1.5 s, cost per 100 actions, reduction in prompts vs ask-all.
+Scanner: recall ≥ 85% on injected documents, false positive rate ≤ 5% on normal documents.
+Red team: attack success rate reported per round, expected to drop after tuning.
 
 ## Plan by day
 
 - Mon 26: setup, credits, repo, spec 001 (event capture)
-- Tue 27: daemon, models, SQLite log, rules + tests
-- Wed 28: judge v1, session context, redaction, fail-safe
-- Thu 29: eval set v1 (60 cases), `make eval`, start dogfooding
-- Fri 30: verdict cache, replay harness, CI
-- Sat 31: eval v2 (150+), 3–5 judge tuning rounds, three-mode comparison
-- Sun 1: dashboard (partly via Muse Code), local open-weights provider
+- Tue 27: daemon, models, SQLite log, rules + policy file + self-protection + systemMessage, tests
+- Wed 28: judge v1 on Muse Spark, session context, redaction, fail-safe; spike: pick and run the local open-weights model
+- Thu 29: eval harness v1 (60 cases, modes rules/spark), start dogfooding
+- Fri 30: cascade (local provider + escalation), eval modes local/cascade, verdict cache
+- Sat 31: Meta red-team loop, eval v2 (150+), 3–5 tuning rounds
+- Sun 1: injection scanner + scanner eval, safer alternative, dashboard with policy buttons (via Muse Code)
 - Mon 2: demo repo + scenario, clean install test, rough video
 - Tue 3: README, final eval, feature freeze
 - Wed 4 (day off): final video, submission
 
-Cut order if behind: local model → dashboard (CLI table instead) → replay harness.
+Cut order if behind: Muse Code protection → safer alternative → dashboard (CLI table instead) → replay harness. Do not cut the cascade or the scanner: they carry the Meta story.
 
 ## Demo video (≤ 3 min)
 
-Hook (10 s, the attack itself) → problem (20 s) → live: same task with AgentWarden, attack blocked with reason (60 s) → where Meta models are used (20 s) → metrics table (30 s) → close (10 s).
+Hook (10 s, the attack itself) → problem (20 s) → live: same task with AgentWarden — scanner flags the README at read time, the exfiltration is blocked with a reason and a safer alternative, the agent finishes the real task (60 s) → where Meta models are used: cascade + scanner + red team (20 s) → metrics: four-mode table and red-team rounds (30 s) → close (10 s).
 
 ## Cost discipline
 

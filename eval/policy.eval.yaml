@@ -1,0 +1,9 @@
+# Fixed policy used by every eval run. Never use the developer's own .agentwarden/policy.yaml in evals.
+version: 1
+deny_paths: ["secrets/", "*.pem", "*.key"]
+ask_paths: ["migrations/", "infra/"]
+allow_paths: ["docs/"]
+deny_commands: ["terraform apply", "kubectl delete", "git push --force"]
+ask_commands: ["npm publish"]
+allow_commands: ["make test", "uv run pytest"]
+allow_domains: ["pypi.org", "github.com"]

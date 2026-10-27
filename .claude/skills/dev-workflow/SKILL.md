@@ -16,14 +16,16 @@ You cannot switch your own model. When a task needs a different model, say so in
 | Implementing a `Size: small` spec, tests, fixtures, refactors, rules, eval script, CI, docs edits | **Sonnet** (default) | Well-specified work; Opus adds cost, not quality |
 | Read-only searching across the repo, finding where something is used | Sonnet subagent (or Haiku) | Keeps file dumps out of the main context |
 | Architecture changes, new module boundaries | **Opus** | Wrong decisions here cost days |
-| `decide.py`, fail-safe paths, `redact.py`, hook wrappers | **Opus** for design and review, Sonnet may implement | Security-critical; this is what judges and attackers probe |
-| Judge prompt design, analysing eval failures between tuning rounds | **Opus** | Reasoning about why the model misjudges |
+| `decide.py`, `cascade.py` escalation logic, fail-safe paths, `redact.py`, hook wrappers | **Opus** for design and review, Sonnet may implement | Security-critical; this is what judges and attackers probe |
+| Judge, scanner and red-team prompt design, analysing eval and red-team failures between tuning rounds | **Opus** | Reasoning about why the model misjudges |
+| Bulk attack generation for the eval set | **Meta — Muse Spark** via `make redteam` | Runs on Meta credits, not the Claude subscription; it is also a product feature |
+| Scanner content cases (documents), seed action cases before the Meta loop exists | Sonnet `redteam` subagent | Hand-crafted hard negatives need careful wording |
 | Debugging after 2 failed fix attempts on Sonnet | **Opus** | Stop the loop; a stronger model with a clean context is cheaper than a 3rd–5th attempt |
 | Writing a `Size: large` spec | **Opus**, user edits | The spec drives everything after it |
 | Dashboard HTML/CSS/JS, README draft, demo repo scaffolding, docstrings, eval report formatting, bulk eval case drafts | **Meta — Muse Code** (user runs it, on Meta credits, Standard tier) | Mechanical work; also counts as using Meta tools in judging |
-| The judge inside the product | **Meta Model API** (Muse Spark) or Meta open weights | Product requirement |
+| The judge, scanner and red-team generator inside the product | Meta open weights (local) + Muse Spark | Product requirement; see the `meta-api` skill for which model plays which role |
 
-Never send to Muse Code: the judge prompt, `decide.py`, `redact.py`, hook wrappers, `.env` or anything with secrets, labelling of `eval/cases/`.
+Never send to Muse Code: anything in `prompts/`, `decide.py`, `cascade.py`, `redact.py`, `scanner.py`, hook wrappers, `.env` or anything with secrets, labelling of `eval/cases/` or `eval/content/`.
 
 When the current task fits a different row than the model in use, say at the start: "Эта задача для Opus — переключи `/model opus`, или продолжу на Sonnet." Then continue as the user decides.
 

@@ -8,7 +8,7 @@ silently would make the metrics meaningless.
 import json
 import sys
 
-PROTECTED = ("prompts/", "eval/cases/")
+PROTECTED = ("prompts/", "eval/cases/", "eval/content/")
 
 
 def main() -> int:

@@ -17,4 +17,4 @@ jobs:
       - run: uv run pytest -q -m "not slow"
       - name: Eval (rules only, no API key)
         if: hashFiles('eval/run.py') != ''
-        run: uv run python eval/run.py --mode rules
+        run: uv run python eval/run.py --set actions --mode rules

@@ -1,0 +1,16 @@
+# Copy to .agentwarden/policy.yaml in the project you want to protect and edit.
+# Built-in protections (secrets, AgentWarden self-protection) always apply; this file cannot weaken them.
+version: 1
+
+# Paths are globs relative to the project root.
+deny_paths: ["secrets/", "*.pem", "*.key"]
+ask_paths: ["migrations/", "infra/"]
+allow_paths: ["docs/"]
+
+# Commands match by prefix.
+deny_commands: ["terraform apply", "kubectl delete", "git push --force"]
+ask_commands: ["npm publish"]
+allow_commands: ["make test", "uv run pytest"]
+
+# Network: hosts the agent may reach without asking.
+allow_domains: ["pypi.org", "github.com"]
