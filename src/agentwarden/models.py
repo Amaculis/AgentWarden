@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 DecisionValue = Literal["allow", "deny", "ask"]
-VerdictSource = Literal["rules", "judge", "failsafe", "default"]
+VerdictSource = Literal["rules", "policy", "judge", "failsafe", "default"]
 
 
 class ToolEvent(BaseModel):
@@ -45,6 +45,7 @@ class Verdict(BaseModel):
     reason: str
     risk: float | None = Field(default=None, ge=0.0, le=1.0)
     source: VerdictSource
+    system_message: str | None = None
 
 
 def failsafe(reason: str) -> Verdict:

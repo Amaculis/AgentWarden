@@ -381,8 +381,11 @@ def _hard_deny_stage(event: ToolEvent) -> Verdict | None:
 
 
 def _policy_stage(event: ToolEvent) -> Verdict | None:
-    """Hook point for the policy spec. Empty for now."""
-    return None
+    """User policy from `.agentwarden/policy.yaml` (spec 004)."""
+    from agentwarden import policy as policy_module
+
+    loaded = policy_module.load_policy(event.cwd)
+    return policy_module.match(loaded, event)
 
 
 # ---------------------------------------------------------------------------
