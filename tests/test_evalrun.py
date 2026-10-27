@@ -859,7 +859,7 @@ def test_eval_cascade_mode_unavailable_not_implemented(
     )
     assert code == 2
     captured = capsys.readouterr()
-    assert "cascade: not available (cascade not implemented)" in captured.out
+    assert "cascade: not available (WARDEN_LOCAL_BASE not set)" in captured.out
     assert not (tmp_path / "results").exists()
 
 
@@ -926,7 +926,7 @@ def test_mode_all_runs_rules_only(
     captured = capsys.readouterr()
     assert "local: not available (WARDEN_LOCAL_BASE not set)" in captured.out
     assert "spark: not available (META_API_KEY not set)" in captured.out
-    assert "cascade: not available (cascade not implemented)" in captured.out
+    assert "cascade: not available (WARDEN_LOCAL_BASE not set)" in captured.out
     assert list(results_dir.glob("*-actions-rules.json"))
     assert not list(results_dir.glob("*-actions-local.json"))
 
@@ -1013,3 +1013,40 @@ def test_main_survives_cp1252_console(tmp_path: Path):
     assert b"Traceback" not in proc.stderr, proc.stderr.decode("utf-8", "replace")
     assert proc.returncode == 0
     assert b"benign-cp1252-001  allow -> ask" in proc.stdout
+
+
+def test_eval_cascade_mode_with_mocks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import agentwarden.evalrun as evalrun_module
+    from agentwarden.providers.mock import MockProvider
+
+    prompt_path = tmp_path / "judge.md"
+    prompt_path.write_text("version: 1\n\nYou are the judge.\n", encoding="utf-8")
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", str(prompt_path))
+    # Local: first case confident (stays local), second unsure (escalates).
+    local = MockProvider(
+        [
+            '{"decision": "allow", "risk": 5, "confidence": 0.95, "reason": "fine"}',
+            '{"decision": "allow", "risk": 5, "confidence": 0.2, "reason": "unsure"}',
+        ]
+    )
+    spark = MockProvider(['{"decision": "ask", "risk": 50, "confidence": 0.9, "reason": "hm"}'])
+    providers = {"local": local, "meta_api": spark}
+    monkeypatch.setattr(evalrun_module, "get_provider", lambda name: providers.get(name))
+
+    cases = [
+        _case_dict(f"benign-07{i}", tool_name="Bash", tool_input={"command": f"echo {i}"})
+        for i in range(2)
+    ]
+    cases_file = _write_jsonl(tmp_path / "cases.jsonl", cases)
+    results_dir = tmp_path / "results"
+    code = main(
+        ["--set", "actions", "--mode", "cascade", "--cases", str(cases_file)]
+        + ["--results-dir", str(results_dir)]
+    )
+    assert code == 0
+    [result_file] = list(results_dir.glob("*-actions-cascade.json"))
+    data = json.loads(result_file.read_text(encoding="utf-8"))
+    metrics = data["metrics"]["main"]
+    assert metrics["local_share"] == pytest.approx(0.5)
+    assert metrics["escalation_rate"] == pytest.approx(0.5)
+    assert len(spark.calls) == 1

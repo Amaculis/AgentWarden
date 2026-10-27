@@ -57,22 +57,22 @@ models with distinct roles.
 
 ## Acceptance criteria
 
-- [ ] `test_confident_local_verdict_is_final`
-- [ ] `test_low_confidence_escalates_to_spark`
-- [ ] `test_missing_confidence_escalates`
-- [ ] `test_mid_risk_escalates_to_spark`
-- [ ] `test_confirm_deny_escalates_deny`
-- [ ] `test_local_down_escalates_to_spark`
-- [ ] `test_local_unparsable_escalates`
-- [ ] `test_both_down_returns_ask`
-- [ ] `test_local_only_never_calls_spark`
-- [ ] `test_budget_exceeded_returns_ask`
-- [ ] `test_decided_by_recorded_in_log`
-- [ ] `test_eval_cascade_mode_with_mocks` — reports `local_share` and `escalation_rate`.
+- [x] `test_confident_local_verdict_is_final`
+- [x] `test_low_confidence_escalates_to_spark`
+- [x] `test_missing_confidence_escalates`
+- [x] `test_mid_risk_escalates_to_spark`
+- [x] `test_confirm_deny_escalates_deny`
+- [x] `test_local_down_escalates_to_spark`
+- [x] `test_local_unparsable_escalates`
+- [x] `test_both_down_returns_ask`
+- [x] `test_local_only_never_calls_spark`
+- [x] `test_budget_exceeded_returns_ask`
+- [x] `test_decided_by_recorded_in_log`
+- [x] `test_eval_cascade_mode_with_mocks` — reports `local_share` and `escalation_rate`.
 - [ ] Eval with real models (human, needs credits): `make eval` reports four modes; cascade
       detection within 3 points of spark-only with ≥ 70% decided locally (target; record the
       real numbers either way in `eval/CHANGELOG.md`).
-- [ ] `make test` green, `make lint` clean.
+- [x] `make test` green, `make lint` clean.
 
 ## Out of scope
 

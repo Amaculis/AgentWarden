@@ -1,9 +1,10 @@
-"""Decision pipeline: rules (spec 003) -> model judge (spec 009) -> thresholds, fail-safe."""
+"""Decision pipeline: rules (003) -> judge (009) or cascade (010) -> thresholds, fail-safe."""
 
 from __future__ import annotations
 
 import os
 
+from agentwarden.cascade import decide_with_cascade
 from agentwarden.judge import SessionContext, env_float, judge
 from agentwarden.models import ToolEvent, Verdict, failsafe
 from agentwarden.providers import Provider, get_provider
@@ -44,26 +45,55 @@ def apply_thresholds(verdict: Verdict) -> Verdict:
     return verdict
 
 
+CascadeProviders = tuple[Provider | None, Provider | None]  # (local, spark)
+
+
+def _cascade_from_env() -> CascadeProviders:
+    from agentwarden.providers import local, meta_api
+
+    return local.from_env(), meta_api.from_env()
+
+
+def _model_verdict(
+    event: ToolEvent,
+    context: SessionContext | None,
+    provider: Provider | None,
+    cascade: CascadeProviders | None,
+) -> Verdict | None:
+    """Verdict for an action the rules did not settle; `None` when no judge is configured."""
+    try:
+        if cascade is None and provider is None:
+            name = os.environ.get("WARDEN_JUDGE")
+            if (name or "").strip().lower() == "cascade":
+                cascade = _cascade_from_env()
+            else:
+                provider = get_provider(name)
+    except Exception:
+        return failsafe("AgentWarden: judge provider misconfigured")
+    if cascade is not None:
+        return apply_thresholds(decide_with_cascade(event, context, *cascade))
+    if provider is not None:
+        return apply_thresholds(judge(event, context, provider))
+    return None
+
+
 def decide(
     event: ToolEvent,
     context: SessionContext | None = None,
     provider: Provider | None = None,
+    cascade: CascadeProviders | None = None,
 ) -> Verdict:
     """Decide what to do with a tool event.
 
-    Rules first; an unsettled action goes to the judge when one is configured
-    (`WARDEN_JUDGE`), otherwise it is `ask`.
+    Rules first; an unsettled action goes to the cascade (`WARDEN_JUDGE=cascade` or
+    `cascade=`) or a single judge provider (`WARDEN_JUDGE=<name>` or `provider=`),
+    otherwise it is `ask`.
     """
     verdict = evaluate(event)
-    if verdict is None:
-        try:
-            if provider is None:
-                provider = get_provider(os.environ.get("WARDEN_JUDGE"))
-        except Exception:
-            provider = None
-            verdict = failsafe("AgentWarden: judge provider misconfigured")
-        if verdict is None and provider is not None:
-            verdict = apply_thresholds(judge(event, context, provider))
+    if verdict is not None:
+        verdict = verdict.model_copy(update={"decided_by": "rules"})
+    else:
+        verdict = _model_verdict(event, context, provider, cascade)
     if verdict is None:
         verdict = Verdict(
             decision="ask",

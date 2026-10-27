@@ -95,6 +95,8 @@ class CaseResult(BaseModel):
     reason: str
     latency_ms: float
     holdout: bool = False
+    decided_by: str | None = None
+    escalated: bool = False
 
 
 def _rules_decider(event: ToolEvent, context: SessionContext) -> Verdict | None:
@@ -119,10 +121,24 @@ PROVIDER_FOR_MODE = {"local": "local", "spark": "meta_api"}
 PROVIDER_ENV = {"local": "WARDEN_LOCAL_BASE", "spark": "META_API_KEY"}
 
 
+def _cascade_decider(local: Provider, spark: Provider) -> Decider:
+    def decider(event: ToolEvent, context: SessionContext) -> Verdict | None:
+        return decide.decide(event, context, cascade=(local, spark))
+
+    return decider
+
+
 def _resolve_mode(mode: str) -> tuple[Decider | None, str | None]:
     """(decider, None) when the mode can run, else (None, why not)."""
     if MODES.get(mode) is not None:
         return MODES[mode], None
+    if mode == "cascade":
+        local, spark = get_provider("local"), get_provider("meta_api")
+        if local is None:
+            return None, f"{PROVIDER_ENV['local']} not set"
+        if spark is None:
+            return None, f"{PROVIDER_ENV['spark']} not set"
+        return _cascade_decider(local, spark), None
     if mode in PROVIDER_FOR_MODE:
         provider = get_provider(PROVIDER_FOR_MODE[mode])
         if provider is None:
@@ -205,12 +221,15 @@ def run_mode(
         start = time.perf_counter()
         try:
             verdict = decider(case_to_event(case, EVAL_CWD), case_to_context(case))
+            decided_by, escalated = None, False
             if verdict is None:
                 decision, source, reason = "ask", "default", "unsettled by this mode"
             else:
                 decision, source, reason = verdict.decision, verdict.source, verdict.reason
+                decided_by, escalated = verdict.decided_by, verdict.escalated
         except Exception as exc:  # noqa: BLE001 -- any decider failure is fail-closed
             decision, source, reason = "ask", "failsafe", f"decider error: {exc!r}"
+            decided_by, escalated = None, False
         latency_ms = (time.perf_counter() - start) * 1000
         results.append(
             CaseResult(
@@ -222,6 +241,8 @@ def run_mode(
                 reason=reason,
                 latency_ms=latency_ms,
                 holdout=holdout,
+                decided_by=decided_by,
+                escalated=escalated,
             )
         )
     return results
@@ -287,6 +308,11 @@ def compute_metrics(results: list[CaseResult]) -> dict:
         },
     }
     metrics.update(dict.fromkeys(MODEL_ONLY_FIELDS))
+    # Cascade only: share of model-judged actions settled locally, and escalated.
+    judged = [r for r in results if r.decided_by in ("local", "spark") or r.escalated]
+    if judged:
+        metrics["local_share"] = sum(r.decided_by == "local" for r in judged) / len(judged)
+        metrics["escalation_rate"] = sum(r.escalated for r in judged) / len(judged)
     return metrics
 
 
@@ -346,14 +372,14 @@ def _table_row(name: str, m: dict) -> str:
     return (
         f"{name:<15} {m['n']:<4} {_fmt(m['accuracy']):<6} {tamper_s:<7} "
         f"{_fmt(m['detection_rate']):<7} {_fmt(m['fpr']):<6} {_fmt(m['ask_rate']):<6} "
-        f"{_fmt(m['rules_settled']):<6} {m['errors']:<4} "
+        f"{_fmt(m['rules_settled']):<6} {_fmt(m['local_share']):<6} {m['errors']:<4} "
         f"{_fmt(m['latency_ms']['p50'], 1):<6} {_fmt(m['latency_ms']['p95'], 1)}"
     )
 
 
 TABLE_HEADER = (
     f"{'mode':<15} {'n':<4} {'acc':<6} {'tamper':<7} {'detect':<7} {'fpr':<6} "
-    f"{'ask':<6} {'rules':<6} {'err':<4} {'p50ms':<6} p95ms"
+    f"{'ask':<6} {'rules':<6} {'local':<6} {'err':<4} {'p50ms':<6} p95ms"
 )
 
 

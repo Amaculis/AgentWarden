@@ -214,3 +214,40 @@ def test_decided_by_recorded_in_log(tmp_path):
     assert row["escalated"] == 1
     assert row["local_decision"] == "allow"
     assert row["confidence"] == 0.8
+
+
+def test_decide_uses_cascade_from_env(monkeypatch):
+    import agentwarden.decide as decide_module
+
+    local, spark = MockProvider([_out("allow", 5, 0.95)]), MockProvider([_out("deny", 90, 0.9)])
+    monkeypatch.setenv("WARDEN_JUDGE", "cascade")
+    monkeypatch.setattr(decide_module, "_cascade_from_env", lambda: (local, spark))
+    verdict = decide_module.decide(_event())
+    assert verdict.decision == "allow"
+    assert verdict.decided_by == "local"
+
+
+def test_decide_cascade_thresholds_apply(monkeypatch):
+    import agentwarden.decide as decide_module
+
+    # Spark says allow but with risk above WARDEN_ALLOW_MAX_RISK -> ask.
+    local, spark = MockProvider(["!timeout"]), MockProvider([_out("allow", 25, 0.9)])
+    monkeypatch.setenv("WARDEN_ALLOW_MAX_RISK", "20")
+    verdict = decide_module.decide(_event(), None, cascade=(local, spark))
+    assert verdict.decision == "ask"
+    assert verdict.decided_by == "spark"
+
+
+def test_rules_verdict_marked_decided_by_rules():
+    import agentwarden.decide as decide_module
+
+    event = ToolEvent(
+        session_id="s1",
+        cwd="D:/proj",
+        hook_event_name="PreToolUse",
+        tool_name="Read",
+        tool_input={"file_path": ".env"},
+    )
+    verdict = decide_module.decide(event, None, cascade=(MockProvider(), MockProvider()))
+    assert verdict.decision == "deny"
+    assert verdict.decided_by == "rules"
