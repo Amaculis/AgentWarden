@@ -50,3 +50,46 @@ def test_unwritable_output_dir_exits_zero(tmp_path):
 
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+def test_on_prompt_posts_to_event(tmp_path, stub_daemon):
+    stub_daemon.status = 204
+    stub_daemon.body = b""
+    result = run_hook(
+        ON_PROMPT,
+        json.dumps(SAMPLE_USER_PROMPT_SUBMIT),
+        tmp_path,
+        env={"WARDEN_URL": stub_daemon.url},
+    )
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert stub_daemon.last_request is not None
+    assert stub_daemon.last_request.path == "/event"
+    sent = json.loads(stub_daemon.last_request.body)
+    assert sent["prompt"] == SAMPLE_USER_PROMPT_SUBMIT["prompt"]
+
+
+def test_on_prompt_slow_daemon_bounded(tmp_path, stub_daemon):
+    import time
+
+    stub_daemon.delay_s = 6.0
+    start = time.monotonic()
+    result = run_hook(
+        ON_PROMPT,
+        json.dumps(SAMPLE_USER_PROMPT_SUBMIT),
+        tmp_path,
+        env={"WARDEN_URL": stub_daemon.url},
+    )
+    assert time.monotonic() - start < 5.0
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_on_prompt_non_loopback_url_not_called(tmp_path, stub_daemon):
+    url = stub_daemon.url.replace("127.0.0.1", "example.invalid")
+    result = run_hook(
+        ON_PROMPT, json.dumps(SAMPLE_USER_PROMPT_SUBMIT), tmp_path, env={"WARDEN_URL": url}
+    )
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert stub_daemon.request_count == 0
