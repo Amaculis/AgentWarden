@@ -24,12 +24,18 @@ from agentwarden.models import ToolEvent, Verdict
 # ---------------------------------------------------------------------------
 
 
-def _deny(detail: str) -> Verdict:
+ALT_SECRETS = "Use .env.example or ask the user for the value you need."
+ALT_SELF_PROTECTION = "Ask the user to change AgentWarden's settings from the dashboard."
+ALT_DESTRUCTION = "Delete only specific build artifacts inside the project, or ask the user."
+
+
+def _deny(detail: str, alternative: str | None = None) -> Verdict:
     return Verdict(
         decision="deny",
         risk=1.0,
         source="rules",
         reason=f"AgentWarden: blocked -- {detail}. Do not try another way; ask the user.",
+        safer_alternative=alternative,
     )
 
 
@@ -212,7 +218,8 @@ def _secret_verdict_for_tool(tool: str) -> Verdict:
     if tool == "Write":
         return _ask("writing to what looks like a secret file (e.g. .env) needs confirmation")
     return _deny(
-        "reading or modifying secret files (like .env, private keys, credentials) is not allowed"
+        "reading or modifying secret files (like .env, private keys, credentials) is not allowed",
+        ALT_SECRETS,
     )
 
 
@@ -223,7 +230,9 @@ def _secret_rule(event: ToolEvent) -> Verdict | None:
         if command is None:
             return None
         if _shell_mentions_secret_path(command) or _env_dump_rule(command):
-            return _deny("reading secret files or dumping environment variables is not allowed")
+            return _deny(
+                "reading secret files or dumping environment variables is not allowed", ALT_SECRETS
+            )
         return None
     fields = _collect_path_fields(event)
     if not fields:
@@ -249,11 +258,17 @@ def _agentwarden_rule(event: ToolEvent) -> Verdict | None:
     if tool in ("Bash", "PowerShell"):
         command = _get_str(event.tool_input, "command")
         if command and _AGENTWARDEN_MENTION_RE.search(command):
-            return _deny("touching .agentwarden (policy, audit log, hooks) is not allowed")
+            return _deny(
+                "touching .agentwarden (policy, audit log, hooks) is not allowed",
+                ALT_SELF_PROTECTION,
+            )
         return None
     for field in _collect_path_fields(event) or []:
         if _has_component(field, ".agentwarden"):
-            return _deny("touching .agentwarden (policy, audit log, hooks) is not allowed")
+            return _deny(
+                "touching .agentwarden (policy, audit log, hooks) is not allowed",
+                ALT_SELF_PROTECTION,
+            )
     return None
 
 
@@ -286,12 +301,15 @@ def _claude_settings_rule(event: ToolEvent) -> Verdict | None:
     if tool in ("Bash", "PowerShell"):
         command = _get_str(event.tool_input, "command")
         if command and _shell_mentions_claude_protected(command):
-            return _deny("touching .agentwarden's own .claude settings/config is not allowed")
+            return _deny(
+                "touching .agentwarden's own .claude settings/config is not allowed",
+                ALT_SELF_PROTECTION,
+            )
         return None
     if tool in ("Write", "Edit", "MultiEdit"):
         for field in _collect_path_fields(event) or []:
             if _is_claude_settings_path(field):
-                return _deny("editing Claude Code settings is not allowed")
+                return _deny("editing Claude Code settings is not allowed", ALT_SELF_PROTECTION)
     return None
 
 
@@ -328,11 +346,15 @@ def _hooks_rule(event: ToolEvent) -> Verdict | None:
     if tool in ("Bash", "PowerShell"):
         command = _get_str(event.tool_input, "command")
         if command and _shell_mentions_hooks(command):
-            return _deny("touching AgentWarden's own hooks/ scripts is not allowed")
+            return _deny(
+                "touching AgentWarden's own hooks/ scripts is not allowed", ALT_SELF_PROTECTION
+            )
         return None
     for field in _collect_path_fields(event) or []:
         if _is_project_hooks_path(field, event.cwd):
-            return _deny("touching AgentWarden's own hooks/ scripts is not allowed")
+            return _deny(
+                "touching AgentWarden's own hooks/ scripts is not allowed", ALT_SELF_PROTECTION
+            )
     return None
 
 
@@ -377,7 +399,10 @@ def _kill_daemon_rule(command: str) -> Verdict | None:
     if not verb_match:
         return None
     if _PROCESS_NAMES_RE.search(command):
-        return _deny("killing a process that may be the AgentWarden daemon is not allowed")
+        return _deny(
+            "killing a process that may be the AgentWarden daemon is not allowed",
+            ALT_SELF_PROTECTION,
+        )
     rest = command[verb_match.end() :]
     if re.fullmatch(r"[\s\-/A-Za-z]*\d[\d\s\-/A-Za-z]*", rest):
         return _ask("killing a process that may be AgentWarden")
@@ -395,7 +420,7 @@ def _daemon_protection_rule(event: ToolEvent) -> Verdict | None:
     if text is None:
         return None
     if _mentions_daemon(text):
-        return _deny("calling the AgentWarden daemon directly is not allowed")
+        return _deny("calling the AgentWarden daemon directly is not allowed", ALT_SELF_PROTECTION)
     if tool in ("Bash", "PowerShell"):
         kill_verdict = _kill_daemon_rule(text)
         if kill_verdict is not None:
@@ -594,7 +619,7 @@ def _default_stage(event: ToolEvent) -> Verdict | None:
         if command is None:
             return None
         if _destructive_rule(command):
-            return _deny("this command destroys data or the filesystem")
+            return _deny("this command destroys data or the filesystem", ALT_DESTRUCTION)
         if _ask_defaults_rule(command):
             return _ask(
                 "this command uploads data or rewrites git history; confirm before continuing"

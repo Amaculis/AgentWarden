@@ -67,6 +67,7 @@ _ADDED_DECISION_COLUMNS = {
     "decided_by": "TEXT",
     "escalated": "INTEGER",
     "local_decision": "TEXT",
+    "safer_alternative": "TEXT",
 }
 
 
@@ -119,8 +120,8 @@ class Store:
                 INSERT INTO decisions (
                     created_at, session_id, prompt_id, tool_use_id, tool_name,
                     tool_input_json, cwd, decision, reason, risk, source, latency_ms,
-                    confidence, decided_by, escalated, local_decision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    confidence, decided_by, escalated, local_decision, safer_alternative
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     _now(),
@@ -139,6 +140,7 @@ class Store:
                     verdict.decided_by,
                     int(verdict.escalated),
                     verdict.local_decision,
+                    verdict.safer_alternative,
                 ),
             )
             conn.commit()
