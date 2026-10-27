@@ -23,9 +23,12 @@ _MODEL_ENV = (
 
 
 @pytest.fixture(autouse=True)
-def _no_real_model(request, monkeypatch):
+def _no_real_model(request, monkeypatch, tmp_path):
     for name in _MODEL_ENV:
         monkeypatch.delenv(name, raising=False)
+    # Never write the verdict cache into the developer's home directory.
+    monkeypatch.setenv("WARDEN_CACHE_PATH", str(tmp_path / "verdict-cache.sqlite"))
+    monkeypatch.delenv("WARDEN_CACHE", raising=False)
     if request.node.get_closest_marker("slow") is None:
         real_handle = httpx.HTTPTransport.handle_request
 

@@ -54,6 +54,19 @@ def _cascade_from_env() -> CascadeProviders:
     return local.from_env(), meta_api.from_env()
 
 
+def _cached(
+    provider: Provider | None, cascade: CascadeProviders | None, name: str | None
+) -> tuple[Provider | None, CascadeProviders | None]:
+    from agentwarden.providers.cache import CachedProvider
+
+    def wrap(p: Provider | None, role: str) -> Provider | None:
+        return None if p is None else CachedProvider(p, namespace=role)
+
+    if cascade is not None:
+        return provider, (wrap(cascade[0], "local"), wrap(cascade[1], "meta_api"))
+    return wrap(provider, name or ""), cascade
+
+
 def _model_verdict(
     event: ToolEvent,
     context: SessionContext | None,
@@ -68,6 +81,8 @@ def _model_verdict(
                 cascade = _cascade_from_env()
             else:
                 provider = get_provider(name)
+            if os.environ.get("WARDEN_CACHE", "").lower() == "on":
+                provider, cascade = _cached(provider, cascade, name)
     except Exception:
         return failsafe("AgentWarden: judge provider misconfigured")
     if cascade is not None:

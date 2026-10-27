@@ -22,9 +22,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from agentwarden import decide, rules
-from agentwarden.judge import SessionContext
+from agentwarden.judge import SessionContext, env_float, parse_output
 from agentwarden.models import DecisionValue, ToolEvent, Verdict
 from agentwarden.providers import Provider, get_provider
+from agentwarden.providers.cache import CachedProvider
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVAL_POLICY_PATH = REPO_ROOT / "eval" / "policy.eval.yaml"
@@ -128,6 +129,26 @@ def _cascade_decider(local: Provider, spark: Provider) -> Decider:
     return decider
 
 
+Meter = tuple[CachedProvider, float, float]  # (provider, USD per M tokens in, out)
+
+
+def _cached(provider: Provider, role: str) -> CachedProvider:
+    # Eval reruns must not pay twice; only verdict-shaped replies are worth caching.
+    return CachedProvider(
+        provider, cacheable=lambda text: parse_output(text) is not None, namespace=role
+    )
+
+
+def _spark_prices() -> tuple[float, float]:
+    # Standard Muse Spark list price per million tokens (meta-api skill, VERIFY).
+    return env_float("WARDEN_PRICE_IN", 1.25), env_float("WARDEN_PRICE_OUT", 4.25)
+
+
+def _with_meters(decider: Decider, meters: list[Meter]) -> Decider:
+    decider.meters = meters  # type: ignore[attr-defined]
+    return decider
+
+
 def _resolve_mode(mode: str) -> tuple[Decider | None, str | None]:
     """(decider, None) when the mode can run, else (None, why not)."""
     if MODES.get(mode) is not None:
@@ -138,12 +159,16 @@ def _resolve_mode(mode: str) -> tuple[Decider | None, str | None]:
             return None, f"{PROVIDER_ENV['local']} not set"
         if spark is None:
             return None, f"{PROVIDER_ENV['spark']} not set"
-        return _cascade_decider(local, spark), None
+        local_c, spark_c = _cached(local, "local"), _cached(spark, "meta_api")
+        meters = [(local_c, 0.0, 0.0), (spark_c, *_spark_prices())]
+        return _with_meters(_cascade_decider(local_c, spark_c), meters), None
     if mode in PROVIDER_FOR_MODE:
         provider = get_provider(PROVIDER_FOR_MODE[mode])
         if provider is None:
             return None, f"{PROVIDER_ENV[mode]} not set"
-        return _judge_decider(provider), None
+        cached = _cached(provider, PROVIDER_FOR_MODE[mode])
+        prices = _spark_prices() if mode == "spark" else (0.0, 0.0)
+        return _with_meters(_judge_decider(cached), [(cached, *prices)]), None
     return None, f"{mode} not implemented"
 
 
@@ -373,13 +398,14 @@ def _table_row(name: str, m: dict) -> str:
         f"{name:<15} {m['n']:<4} {_fmt(m['accuracy']):<6} {tamper_s:<7} "
         f"{_fmt(m['detection_rate']):<7} {_fmt(m['fpr']):<6} {_fmt(m['ask_rate']):<6} "
         f"{_fmt(m['rules_settled']):<6} {_fmt(m['local_share']):<6} {m['errors']:<4} "
-        f"{_fmt(m['latency_ms']['p50'], 1):<6} {_fmt(m['latency_ms']['p95'], 1)}"
+        f"{_fmt(m['latency_ms']['p50'], 1):<6} {_fmt(m['latency_ms']['p95'], 1):<6} "
+        f"{_fmt(m['cost_per_100'], 4)}"
     )
 
 
 TABLE_HEADER = (
     f"{'mode':<15} {'n':<4} {'acc':<6} {'tamper':<7} {'detect':<7} {'fpr':<6} "
-    f"{'ask':<6} {'rules':<6} {'local':<6} {'err':<4} {'p50ms':<6} p95ms"
+    f"{'ask':<6} {'rules':<6} {'local':<6} {'err':<4} {'p50ms':<6} {'p95ms':<6} $/100"
 )
 
 
@@ -438,6 +464,10 @@ def _run_actions_mode(
     """Run one mode, print it, write results. Returns 0, 1 (tamper gate) or 2 (write error)."""
     results = run_mode(main_cases, decider) + run_mode(holdout_cases, decider, holdout=True)
     main_metrics = compute_metrics([r for r in results if not r.holdout])
+    meters: list[Meter] = getattr(decider, "meters", [])
+    if meters and results:
+        cost = sum(m.tokens_in * p_in + m.tokens_out * p_out for m, p_in, p_out in meters) / 1e6
+        main_metrics["cost_per_100"] = cost / len(results) * 100
     holdout_metrics = compute_metrics([r for r in results if r.holdout]) if holdout_cases else None
 
     print(_table_row(mode, main_metrics))
