@@ -180,7 +180,7 @@ Settings and housekeeping:
 - [x] `test_example_settings_files`: both example files are valid JSON; POSIX uses `python3`, Windows uses `python`; PreToolUse `timeout` is 15 and greater than the hook's maximum deadline of 10.
 - [x] Spec 001 tests updated where behaviour intentionally changed (`test_on_tool_makes_no_decision`, `test_invalid_json_is_ignored` and `test_hooks_print_nothing` for `on_tool`). `on_prompt.py` tests stay unchanged.
 - [x] `make test` green, `make lint` clean.
-- [ ] Manual (human, real Claude Code on Windows): copy the Windows example into a scratch project, `make run`, ask the agent to `cat ~/.ssh/id_rsa` and confirm a deny with the 🛡 line. Stop the daemon, run any Bash command, and confirm an `ask` with "AgentWarden unavailable". Record how `systemMessage` renders in the VS Code extension and the CLI in the `hook-protocol` skill (closes its VERIFY note).
+- [x] Manual (done 2026-10-27 in VS Code; CLI not checked; results in `hook-protocol`) (human, real Claude Code on Windows): copy the Windows example into a scratch project, `make run`, ask the agent to `cat ~/.ssh/id_rsa` and confirm a deny with the 🛡 line. Stop the daemon, run any Bash command, and confirm an `ask` with "AgentWarden unavailable". Record how `systemMessage` renders in the VS Code extension and the CLI in the `hook-protocol` skill (closes its VERIFY note).
 - [ ] Manual: confirm in the hooks docs whether a hook `permissionDecision: "allow"` overrides `deny` rules in `settings.json` permissions, and note the answer in `hook-protocol` (relevant to `WARDEN_ALLOW=explicit`).
 
 ## Out of scope

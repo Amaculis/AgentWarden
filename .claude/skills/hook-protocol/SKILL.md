@@ -52,7 +52,18 @@ Two audiences, two fields:
 - `permissionDecisionReason` → read by the **agent**. Full reason + safer alternative.
 - `systemMessage` (top level, universal field) → shown to the **user** as a warning line. Short: `🛡 AgentWarden: <blocked|asking about> <what> — <category> (<rules|policy|local model|Muse Spark>)`. Only for deny and ask; allows stay silent. Off when `WARDEN_NOTIFY=off`.
 
-VERIFY in a real session how `systemMessage` renders in the VS Code extension and the CLI, and note it here.
+Verified 2026-10-27, VS Code extension on Windows (spec 005 manual check), `deny` on `cat ~/.ssh/id_rsa`:
+- The tool block's OUT shows `PreToolUse:Bash hook error: <permissionDecisionReason>`. Claude Code labels a deny as "hook error"; that is normal, not a crash.
+- `systemMessage` appears below the tool block as a grey italic line: `PreToolUse:Bash says: 🛡 AgentWarden: blocked this action (rules)`. The 🛡 renders.
+- The agent read the reason, did not retry another way, and told the user to run the command themselves.
+
+Verified 2026-10-27, VS Code, fail-closed `ask` (daemon stopped, agent runs `dir`):
+- Claude Code shows its normal "Allow this PowerShell command?" dialog with the command and the agent's description only. Neither `permissionDecisionReason` nor `systemMessage` appears in the dialog.
+- The 🛡 `systemMessage` line (`PreToolUse:PowerShell says: 🛡 AgentWarden: unavailable, needs confirmation for this action (fail-safe)`) appears only after the user answers, below the tool block.
+- Consequence: on `ask` the user cannot see why AgentWarden asked at decision time. Don't rely on `systemMessage` to explain an `ask`; if that matters, it needs another channel (e.g. the dashboard).
+- The agent then misreported the result as "the hook allowed `dir`" — it was the user who approved.
+
+VERIFY: CLI rendering.
 
 UserPromptSubmit: cannot rewrite the prompt. It may add `hookSpecificOutput.additionalContext` or block with top-level `{"decision": "block", "reason": "..."}`. AgentWarden only records the prompt as the session task; it returns nothing.
 
