@@ -1,30 +1,43 @@
 # NNN — Spike: choose and run the local Meta open-weights model
 
 Size: small
-Planned: Wed 28 Oct. Time box: 2 hours. Output is a decision, not product code.
+Time box: 2 hours. Output is a decision, not product code. Human-driven (downloads, hardware).
 
 ## Context
 
-The cascade and the scanner both depend on a local Meta model that is fast enough. Decide early which model and where it runs, before building on it.
+The cascade (010) and the scanner (013) both use a local Meta model behind an
+OpenAI-compatible endpoint. All code is in place and tested with mocks; this spike picks the
+model and measures it.
 
 ## Steps
 
-1. On dev.meta.ai, list Meta open-weights models usable for this (third-party guides mention Muse Glimmer for local hardware and Muse Spark Open via hosted providers — VERIFY names, sizes, licence).
-2. Try the smallest suitable one locally through an OpenAI-compatible server (Ollama or vLLM). Record hardware used.
-3. If local is too slow (p50 > 1 s for a ~1k-token judge request), host it on Modal or Baseten with partner credits.
-4. Run 20 eval cases through it with the judge prompt v1 via a throwaway script; compare verdicts with Muse Spark on the same cases.
+1. On dev.meta.ai, list Meta open-weights models usable for this (VERIFY names, sizes, licence).
+2. Serve the smallest suitable one through an OpenAI-compatible server, e.g. Ollama
+   (`ollama serve`, base `http://127.0.0.1:11434/v1`) or vLLM. Record hardware.
+3. Point AgentWarden at it (no code change):
+   `WARDEN_LOCAL_BASE=http://127.0.0.1:11434/v1`, `WARDEN_LOCAL_MODEL=<model id>`.
+   Write `prompts/judge.md` and `prompts/scanner.md` first (drafts in `docs/handoff/`).
+4. Judge quality and latency — the eval already reports p50/p95, errors and parse failures:
+   `python eval/run.py --set actions --mode local --cases eval/candidates/*.jsonl`
+   and, with `META_API_KEY`, the same with `--mode spark`. Compare the two
+   `eval/results/*-actions-{local,spark}.json` files (per-case `decision` fields) for agreement.
+   Reruns are free (verdict cache, spec 012).
+5. Scanner: `WARDEN_SCANNER=local python eval/run.py --set content --cases eval/candidates/content-*.jsonl`.
+6. If p50 > 1 s for the judge, try a smaller model or host it on Modal/Baseten (partner
+   credits) and set `WARDEN_LOCAL_BASE` to that endpoint; raise `WARDEN_LOCAL_TIMEOUT` only if
+   the 7 s decision budget still holds.
 
 ## Acceptance criteria
 
 - [ ] Decision written to `docs/CONTEXT.md` (model id, where it runs, why).
-- [ ] `meta-api` skill updated: local model id, base URL pattern, latency p50/p95, JSON reliability (how many of 20 parsed).
-- [ ] `.env.example` updated with `WARDEN_LOCAL_BASE` / `WARDEN_LOCAL_MODEL` examples.
-- [ ] Agreement with Spark on the 20 cases recorded (e.g. 16/20).
+- [ ] `meta-api` skill updated: local model id, base URL, p50/p95, JSON reliability.
+- [ ] `.env.example` updated with the real `WARDEN_LOCAL_BASE` / `WARDEN_LOCAL_MODEL`.
+- [ ] Agreement with Spark on the candidate set recorded (e.g. 70/90).
 
 ## Out of scope
 
-Provider code, cascade logic.
+Provider code, cascade logic (done in 009/010).
 
 ## Demo impact
 
-None directly; decides whether the demo can say "runs fully on your machine".
+Decides whether the demo can say "runs fully on your machine".
