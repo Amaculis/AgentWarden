@@ -10,6 +10,8 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import re
+import shlex
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -128,10 +130,43 @@ def _path_matches_glob(raw_path: str, cwd: str, glob: str) -> bool:
     return fnmatch.fnmatch(rel, pattern + "/*")
 
 
-def _any_path_matches(event: ToolEvent, globs: list[str]) -> bool:
+_EXTENSION_RE = re.compile(r"\.[A-Za-z0-9_]+$")
+
+
+def _split_command(command: str) -> list[str]:
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.escape = ""  # keep backslashes: Windows paths
+        return list(lexer)
+    except ValueError:
+        return [tok.strip("\"'") for tok in command.split()]
+
+
+def _command_path_tokens(command: str) -> list[str]:
+    """Path-like tokens of a shell command (spec 008). Bare words are not paths."""
+    paths = []
+    for tok in _split_command(command):
+        if tok.startswith("-"):
+            if "=" not in tok:
+                continue
+            tok = tok.split("=", 1)[1]
+        tok = tok.strip("\"'")
+        if not tok or any(c.isspace() for c in tok) or "://" in tok:
+            continue
+        if "/" in tok or "\\" in tok or _EXTENSION_RE.search(tok):
+            paths.append(tok)
+    return paths
+
+
+def _any_path_matches(event: ToolEvent, globs: list[str], *, include_command: bool = False) -> bool:
     if not globs:
         return False
-    fields = _collect_path_fields(event)
+    fields = list(_collect_path_fields(event) or [])
+    if include_command and event.tool_name in ("Bash", "PowerShell"):
+        command = _get_str(event.tool_input, "command")
+        if command is not None:
+            fields.extend(_command_path_tokens(command))
     if not fields:
         return False
     return any(
@@ -180,11 +215,11 @@ def _any_domain_matches(event: ToolEvent, domains: list[str]) -> bool:
 
 def match(policy: Policy, event: ToolEvent) -> Verdict | None:
     """Match an event against the policy. Precedence: deny > ask > allow."""
-    if _any_path_matches(event, policy.deny_paths) or _any_command_matches(
+    if _any_path_matches(event, policy.deny_paths, include_command=True) or _any_command_matches(
         event, policy.deny_commands
     ):
         return _deny("this path or command is denied by policy")
-    if _any_path_matches(event, policy.ask_paths) or _any_command_matches(
+    if _any_path_matches(event, policy.ask_paths, include_command=True) or _any_command_matches(
         event, policy.ask_commands
     ):
         return _ask("this path or command needs confirmation by policy")

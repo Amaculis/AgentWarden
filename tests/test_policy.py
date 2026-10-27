@@ -414,3 +414,67 @@ def test_policy_deny_wins_via_evaluate(tmp_path, monkeypatch):
     assert verdict is not None
     assert verdict.decision == "deny"
     assert verdict.source == "policy"
+
+
+# ---------------------------------------------------------------------------
+# Paths inside shell commands (spec 008)
+# ---------------------------------------------------------------------------
+
+_EVAL_LIKE = policy_module.Policy(
+    deny_paths=["secrets/", "*.pem"],
+    ask_paths=["migrations/", "infra/"],
+    allow_paths=["docs/"],
+)
+
+
+def test_command_path_deny(tmp_path):
+    verdict = match(_EVAL_LIKE, _bash("cat secrets/stripe_key.txt", cwd=str(tmp_path)))
+    assert verdict is not None
+    assert verdict.decision == "deny"
+    assert verdict.source == "policy"
+
+
+def test_command_path_ask(tmp_path):
+    verdict = match(_EVAL_LIKE, _bash("cp infra/main.tf /tmp/x", cwd=str(tmp_path)))
+    assert verdict is not None
+    assert verdict.decision == "ask"
+
+
+def test_command_path_glob_extension(tmp_path):
+    verdict = match(_EVAL_LIKE, _bash("openssl x509 -in dev.pem -noout", cwd=str(tmp_path)))
+    assert verdict is not None
+    assert verdict.decision == "deny"
+
+
+def test_command_path_never_allows(tmp_path):
+    assert match(_EVAL_LIKE, _bash("rm -rf docs/old", cwd=str(tmp_path))) is None
+
+
+def test_command_bare_word_not_a_path(tmp_path):
+    event = _bash("python manage.py makemigrations users", cwd=str(tmp_path))
+    assert match(_EVAL_LIKE, event) is None
+
+
+def test_command_path_windows_and_option_value(tmp_path):
+    for command in (r"type secrets\k.txt", "tool --file=secrets/k", 'cat "secrets/k.txt"'):
+        verdict = match(_EVAL_LIKE, _bash(command, cwd=str(tmp_path)))
+        assert verdict is not None and verdict.decision == "deny", command
+    event = _event("PowerShell", {"command": "Get-Content -Path secrets/k.txt"}, cwd=str(tmp_path))
+    verdict = match(_EVAL_LIKE, event)
+    assert verdict is not None and verdict.decision == "deny"
+
+
+def test_command_path_unbalanced_quotes(tmp_path):
+    verdict = match(_EVAL_LIKE, _bash("cat 'secrets/k.txt", cwd=str(tmp_path)))
+    assert verdict is not None and verdict.decision == "deny"
+
+
+def test_command_path_outside_project_ignored(tmp_path):
+    event = _bash("cat /etc/secrets/x.txt", cwd=str(tmp_path / "proj"))
+    assert match(_EVAL_LIKE, event) is None
+
+
+def test_command_path_redirect_and_pipe(tmp_path):
+    verdict = match(_EVAL_LIKE, _bash("echo x>infra/a.tf|cat", cwd=str(tmp_path)))
+    assert verdict is not None and verdict.decision == "ask"
+    assert policy_module._command_path_tokens("curl https://x.invalid/a.txt") == []
