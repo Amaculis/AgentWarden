@@ -23,6 +23,26 @@ CREATE TABLE IF NOT EXISTS prompts (
     prompt TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    source TEXT NOT NULL,
+    flagged INTEGER NOT NULL,
+    confidence REAL,
+    error TEXT,
+    latency_ms INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS taints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    UNIQUE (session_id, source)
+);
+
 CREATE TABLE IF NOT EXISTS decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL,
@@ -151,6 +171,63 @@ class Store:
             record["tool_input"] = json.loads(record.pop("tool_input_json"))
             results.append(record)
         return results
+
+    def add_scan(
+        self,
+        session_id: str,
+        tool_name: str,
+        source: str,
+        flagged: bool,
+        confidence: float | None,
+        error: str | None,
+        latency_ms: int,
+    ) -> None:
+        """Log a scan. The scanned content itself is never stored."""
+        conn = self._connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO scans (
+                    created_at, session_id, tool_name, source, flagged, confidence, error,
+                    latency_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    _now(),
+                    session_id,
+                    tool_name,
+                    source,
+                    int(flagged),
+                    confidence,
+                    error,
+                    latency_ms,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def add_taint(self, session_id: str, source: str) -> None:
+        conn = self._connect()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO taints (created_at, session_id, source) VALUES (?, ?, ?)",
+                (_now(), session_id, source),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def session_taints(self, session_id: str) -> list[str]:
+        """Distinct flagged sources of the session, in first-flagged order."""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT source FROM taints WHERE session_id = ? ORDER BY id ASC", (session_id,)
+            ).fetchall()
+        finally:
+            conn.close()
+        return list(dict.fromkeys(row["source"] for row in rows))
 
     def session_prompts(self, session_id: str) -> list[str]:
         conn = self._connect()

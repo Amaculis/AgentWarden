@@ -38,6 +38,19 @@ class PromptEvent(BaseModel):
     prompt: str
 
 
+class ReadEvent(BaseModel):
+    """PostToolUse hook payload for Read/WebFetch (spec 013). `tool_response` shape: VERIFY."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    session_id: str
+    cwd: str
+    hook_event_name: Literal["PostToolUse"]
+    tool_name: str
+    tool_input: dict[str, Any] = {}
+    tool_response: Any = None
+
+
 class Verdict(BaseModel):
     """A decision returned to the hook."""
 

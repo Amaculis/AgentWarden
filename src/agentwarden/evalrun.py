@@ -229,6 +229,7 @@ def case_to_context(case: ActionCase) -> SessionContext:
     return SessionContext(
         task=case.task,
         recent_actions=[h.model_dump() for h in case.history],
+        taints=list(case.taints or []),
     )
 
 
@@ -531,8 +532,12 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(errors="backslashreplace")
 
     if args.set_name == "content":
-        print("scanner not implemented (content set needs the injection-scanner spec)")
-        return 2
+        from agentwarden import evalscan
+
+        patterns = args.cases if args.cases != [DEFAULT_CASES] else [evalscan.DEFAULT_CONTENT]
+        return evalscan.run_content_eval(
+            _expand(patterns), args.results_dir, not args.no_write, _git_commit(), _rel
+        )
 
     modes = list(MODES) if args.mode == "all" else [args.mode]
     deciders: dict[str, Decider] = {}

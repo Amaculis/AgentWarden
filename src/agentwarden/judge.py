@@ -38,6 +38,7 @@ _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 class SessionContext(BaseModel):
     task: str | None = None
     recent_actions: list[dict[str, Any]] = []
+    taints: list[str] = []  # sources the scanner flagged earlier in this session (spec 013)
 
 
 class JudgeOutput(BaseModel):
@@ -82,6 +83,13 @@ def build_messages(event: ToolEvent, context: SessionContext | None, prompt: str
             for a in context.recent_actions[-5:]
         ],
         "action": {"tool_name": event.tool_name, "tool_input": event.tool_input},
+        # First 5 + last 5: later flagged reads must not push the original source out of view.
+        "taints": context.taints
+        if len(context.taints) <= 10
+        else [
+            *context.taints[:5],
+            *context.taints[-5:],
+        ],
     }
     document = redact_obj(document)
     text = ""

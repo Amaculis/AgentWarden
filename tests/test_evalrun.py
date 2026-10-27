@@ -879,7 +879,7 @@ def test_content_set_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture):
     )
     assert code == 2
     captured = capsys.readouterr()
-    assert "scanner not implemented" in captured.out
+    assert "scan: not available (WARDEN_LOCAL_BASE not set)" in captured.out
 
 
 def test_no_cases_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture):

@@ -6,6 +6,7 @@ never `allow`. Errors never leak into the `reason` field shown to the agent.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -17,10 +18,14 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
+from agentwarden import scanner
 from agentwarden.decide import decide, with_system_message
 from agentwarden.judge import SessionContext
-from agentwarden.models import PromptEvent, ToolEvent, Verdict
+from agentwarden.models import PromptEvent, ReadEvent, ToolEvent, Verdict
 from agentwarden.models import failsafe as _bare_failsafe
+from agentwarden.providers import get_provider
+from agentwarden.redact import redact
+from agentwarden.scanner import ScanResult
 from agentwarden.store import Store
 
 logger = logging.getLogger("agentwarden.daemon")
@@ -37,7 +42,22 @@ def session_context(store: Store, session_id: str) -> SessionContext:
     rows = store.recent_decisions(limit=5, session_id=session_id)
     actions = [{"tool_name": r["tool_name"], "tool_input": r["tool_input"]} for r in reversed(rows)]
     task = "\n---\n".join(prompts) or None
-    return SessionContext(task=task, recent_actions=actions)
+    taints = store.session_taints(session_id)
+    return SessionContext(task=task, recent_actions=actions, taints=taints)
+
+
+MAX_CONCURRENT_SCANS = 3
+MAX_SOURCE_CHARS = 300
+
+
+def scan_source(event: ReadEvent) -> str:
+    """Redacted, bounded file path or URL: used for logs, the store, taints and the warning."""
+    return redact(scanner.scan_source(event.tool_name, event.tool_input))[:MAX_SOURCE_CHARS]
+
+
+def run_scan(event: ReadEvent, source: str) -> ScanResult:
+    provider = get_provider(os.environ.get("WARDEN_SCANNER") or "local")
+    return scanner.scan(scanner.extract_text(event.tool_response), source, provider)
 
 
 def _default_db_path() -> Path:
@@ -55,6 +75,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.store = Store(resolved_db_path)
+        app.state.scan_slots = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
         yield
 
     app = FastAPI(lifespan=lifespan)
@@ -115,6 +136,42 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             return failsafe("AgentWarden: audit log unavailable")
 
         return verdict
+
+    @app.post("/scan")
+    async def scan_endpoint(payload: ReadEvent, request: Request) -> dict[str, str | None]:
+        """Scan content the agent just read; `{"warning": null}` unless it was flagged."""
+        store: Store = request.app.state.store
+        source = scan_source(payload)
+        slots: asyncio.Semaphore = request.app.state.scan_slots
+        if slots.locked():
+            # Scans share the threadpool with /decide; never let them starve it.
+            result = ScanResult(error="busy")
+        else:
+            async with slots:
+                try:
+                    result = await run_in_threadpool(run_scan, payload, source)
+                except Exception:
+                    logger.exception("scan raised")
+                    result = ScanResult(error="internal")
+        try:
+            store.add_scan(
+                payload.session_id,
+                payload.tool_name,
+                source,
+                result.flagged,
+                result.confidence,
+                result.error,
+                result.latency_ms,
+            )
+            if result.flagged:
+                store.add_taint(payload.session_id, source)
+        except Exception:
+            logger.exception("Failed to log scan")  # the warning matters more than the log
+        if result.error:
+            logger.warning("scan of %s failed: %s", source, result.error)
+        if not result.flagged:
+            return {"warning": None}
+        return {"warning": scanner.warning_text(source, result)}
 
     @app.get("/log")
     async def log(

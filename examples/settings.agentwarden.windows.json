@@ -5,6 +5,9 @@
     ],
     "PreToolUse": [
       {"matcher": "*", "hooks": [{"type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/hooks/on_tool.py\"", "timeout": 15}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Read|WebFetch", "hooks": [{"type": "command", "command": "python \"${CLAUDE_PROJECT_DIR}/hooks/on_read.py\"", "timeout": 15}]}
     ]
   }
 }
