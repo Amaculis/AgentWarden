@@ -228,6 +228,58 @@ def test_agentwarden_dir_denied_for_any_tool(event):
     assert verdict.decision == "deny"
 
 
+@pytest.mark.parametrize(
+    "event",
+    [
+        _read("D:\\proj\\hooks\\on_tool.py"),
+        _write("D:\\proj\\hooks\\on_tool.py"),
+        _edit("D:\\proj\\hooks\\on_tool.py"),
+        _glob(path="D:\\proj\\hooks"),
+    ],
+    ids=["read", "write", "edit", "glob"],
+)
+def test_write_to_hooks_file_is_denied(event):
+    verdict = evaluate(event)
+
+    assert verdict is not None
+    assert verdict.decision == "deny"
+
+
+def test_edit_hooks_file_is_denied():
+    verdict = evaluate(_edit("D:\\proj\\hooks\\on_prompt.py"))
+
+    assert verdict is not None
+    assert verdict.decision == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rm -rf hooks",
+        "Remove-Item hooks -Recurse -Force",
+        "cat hooks/on_tool.py",
+        "del hooks\\on_tool.py",
+    ],
+)
+def test_delete_hooks_via_bash_is_denied(command):
+    verdict = evaluate(_bash(command))
+
+    assert verdict is not None
+    assert verdict.decision == "deny"
+
+
+def test_hooks_outside_project_not_matched():
+    verdict = evaluate(_read("C:\\other\\hooks\\on_tool.py", cwd=PROJECT))
+
+    assert verdict is None
+
+
+def test_unrelated_hooks_word_not_matched():
+    verdict = evaluate(_bash("echo use git hooks for this"))
+
+    assert verdict is None
+
+
 CLAUDE_SETTINGS_PATHS = [
     "D:/proj/.claude/settings.json",
     "D:\\proj\\.claude\\settings.local.json",

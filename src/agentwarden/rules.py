@@ -296,7 +296,48 @@ def _claude_settings_rule(event: ToolEvent) -> Verdict | None:
 
 
 # ---------------------------------------------------------------------------
-# Stage 1e -- self-protection: daemon call and kill
+# Stage 1e -- self-protection: hooks/ directory
+# ---------------------------------------------------------------------------
+
+_HOOKS_PATH_TOKEN_RE = re.compile(r"\bhooks[/\\]", re.IGNORECASE)
+_HOOKS_REMOVE_VERBS_RE = re.compile(
+    r"\b(?:rm|del|erase|remove-item|ri|mv|move-item|ren|rename-item)\b", re.IGNORECASE
+)
+
+
+def _is_project_hooks_path(raw_path: str, cwd: str) -> bool:
+    if not _is_inside_project(raw_path, cwd):
+        return False
+    full = _normalize_full(raw_path, cwd)
+    root = _normalize_full(cwd, cwd)
+    rel = full[len(root) :].lstrip("/")
+    first = rel.split("/", 1)[0] if rel else ""
+    return first == "hooks"
+
+
+def _shell_mentions_hooks(command: str) -> bool:
+    if _HOOKS_PATH_TOKEN_RE.search(command):
+        return True
+    return bool(_HOOKS_REMOVE_VERBS_RE.search(command)) and bool(
+        re.search(r"\bhooks\b", command, re.IGNORECASE)
+    )
+
+
+def _hooks_rule(event: ToolEvent) -> Verdict | None:
+    tool = event.tool_name
+    if tool in ("Bash", "PowerShell"):
+        command = _get_str(event.tool_input, "command")
+        if command and _shell_mentions_hooks(command):
+            return _deny("touching AgentWarden's own hooks/ scripts is not allowed")
+        return None
+    for field in _collect_path_fields(event) or []:
+        if _is_project_hooks_path(field, event.cwd):
+            return _deny("touching AgentWarden's own hooks/ scripts is not allowed")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Stage 1f -- self-protection: daemon call and kill
 # ---------------------------------------------------------------------------
 
 _WARDEN_URL_DEFAULT = "http://127.0.0.1:8765"
@@ -368,7 +409,13 @@ def _daemon_protection_rule(event: ToolEvent) -> Verdict | None:
 
 
 def _hard_deny_stage(event: ToolEvent) -> Verdict | None:
-    for rule in (_secret_rule, _agentwarden_rule, _claude_settings_rule, _daemon_protection_rule):
+    for rule in (
+        _secret_rule,
+        _agentwarden_rule,
+        _claude_settings_rule,
+        _hooks_rule,
+        _daemon_protection_rule,
+    ):
         verdict = rule(event)
         if verdict is not None:
             return verdict

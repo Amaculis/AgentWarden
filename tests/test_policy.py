@@ -379,6 +379,27 @@ def test_policy_allow_cannot_override_self_protection(tmp_path, monkeypatch):
     assert curl_daemon_verdict.source == "rules"
 
 
+def test_policy_cannot_override_hooks_protection(tmp_path, monkeypatch):
+    policy_file = _write_policy(
+        tmp_path,
+        'version: 1\nallow_paths:\n  - "hooks/"\nallow_commands:\n  - "rm -rf hooks"\n',
+    )
+    monkeypatch.setenv("WARDEN_POLICY", str(policy_file))
+
+    write_verdict = evaluate(
+        _event("Write", {"file_path": str(tmp_path / "hooks" / "on_tool.py")}, cwd=str(tmp_path))
+    )
+    rm_verdict = evaluate(_bash("rm -rf hooks", cwd=str(tmp_path)))
+
+    assert write_verdict is not None
+    assert write_verdict.decision == "deny"
+    assert write_verdict.source == "rules"
+
+    assert rm_verdict is not None
+    assert rm_verdict.decision == "deny"
+    assert rm_verdict.source == "rules"
+
+
 # ---------------------------------------------------------------------------
 # Policy stage sits between hard denies and built-in defaults
 # ---------------------------------------------------------------------------
