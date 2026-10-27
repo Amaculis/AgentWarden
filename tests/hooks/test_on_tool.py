@@ -20,8 +20,6 @@ import sys
 
 import pytest
 
-from ._stub_daemon import stub_daemon  # noqa: F401  (fixture import)
-from ._stub_daemon import second_stub_daemon  # noqa: F401  (fixture import)
 from ._support import ON_TOOL, REPO_ROOT, SAMPLE_PRE_TOOL_USE, run_hook
 
 FAILSAFE_REASON = "AgentWarden unavailable"
@@ -273,7 +271,9 @@ def test_non_ascii_stdin_forwarded_intact(tmp_path, stub_daemon):
 def test_still_records_event(tmp_path, stub_daemon):
     stub_daemon.body = _verdict_body(decision="deny", reason="blocked", source="rules")
 
-    run_hook(ON_TOOL, json.dumps(SAMPLE_PRE_TOOL_USE), tmp_path, env={"WARDEN_URL": stub_daemon.url})
+    run_hook(
+        ON_TOOL, json.dumps(SAMPLE_PRE_TOOL_USE), tmp_path, env={"WARDEN_URL": stub_daemon.url}
+    )
 
     events_file = tmp_path / "events.jsonl"
     assert events_file.exists()

@@ -143,43 +143,43 @@ Known residual paths the script **cannot** close, documented here so nobody assu
 Tests run `on_tool.py` as a real subprocess (house style, `tests/hooks/_support.py`) against a **stub daemon**: a `http.server.ThreadingHTTPServer` on `127.0.0.1:0` in a pytest fixture, with configurable status, body, delay and slow-drip, recording the request it received. `WARDEN_URL` points the hook at it. That URL override is what makes the tests possible: the real hook code path (urllib, threading, encoding, exit code) runs end to end, and no test can accidentally hit a real daemon on 8765. `run_hook` gains `env` overrides and **defaults `WARDEN_URL` to a closed loopback port**, so legacy tests never reach a developer's running daemon. Pure functions are additionally unit-tested in-process (import `hooks/on_tool.py` with `hooks/` on `sys.path`). Tests that bind a port need loopback binding: if the agent sandbox blocks it, run `make test` outside the sandbox. These tests must **fail, not skip**, when they cannot bind.
 
 Hook, happy paths:
-- [ ] `test_deny_verdict_maps_to_deny_output`: stub returns `Verdict(decision="deny", reason=..., source="rules", system_message="🛡 ...").model_dump_json()`; stdout parses to the exact deny shape, `systemMessage` equals the message, exit 0.
-- [ ] `test_ask_verdict_maps_to_ask_output`
-- [ ] `test_system_message_omitted_when_null`: stub returns `system_message: null`; the `systemMessage` key is absent (not `null`).
-- [ ] `test_allow_passthrough_prints_nothing`: default env, allow verdict, stdout `""`, exit 0.
-- [ ] `test_allow_explicit_mode`: `WARDEN_ALLOW=explicit`, stdout has `permissionDecision: "allow"` and no `systemMessage`.
-- [ ] `test_stdout_is_ascii_only`: deny with 🛡 and a non-ASCII reason; `result.stdout` (bytes) is pure ASCII and round-trips through `json.loads` to the original text.
-- [ ] `test_forwards_original_bytes`: the stub records the request body; it equals the stdin bytes; the path is `/decide`; the method is POST.
-- [ ] `test_non_ascii_stdin_forwarded_intact`: a `file_path` containing `é`/`ж` arrives at the stub unchanged.
-- [ ] `test_still_records_event`: the spec 001 recording still happens alongside a decision.
+- [x] `test_deny_verdict_maps_to_deny_output`: stub returns `Verdict(decision="deny", reason=..., source="rules", system_message="🛡 ...").model_dump_json()`; stdout parses to the exact deny shape, `systemMessage` equals the message, exit 0.
+- [x] `test_ask_verdict_maps_to_ask_output`
+- [x] `test_system_message_omitted_when_null`: stub returns `system_message: null`; the `systemMessage` key is absent (not `null`).
+- [x] `test_allow_passthrough_prints_nothing`: default env, allow verdict, stdout `""`, exit 0.
+- [x] `test_allow_explicit_mode`: `WARDEN_ALLOW=explicit`, stdout has `permissionDecision: "allow"` and no `systemMessage`.
+- [x] `test_stdout_is_ascii_only`: deny with 🛡 and a non-ASCII reason; `result.stdout` (bytes) is pure ASCII and round-trips through `json.loads` to the original text.
+- [x] `test_forwards_original_bytes`: the stub records the request body; it equals the stdin bytes; the path is `/decide`; the method is POST.
+- [x] `test_non_ascii_stdin_forwarded_intact`: a `file_path` containing `é`/`ж` arrives at the stub unchanged.
+- [x] `test_still_records_event`: the spec 001 recording still happens alongside a decision.
 
 Hook, fail-closed paths (each asserts: exit 0, stdout is exactly the fail-closed ask JSON, `permissionDecisionReason == "AgentWarden unavailable"`):
-- [ ] `test_daemon_unreachable_asks`: `WARDEN_URL` at a closed port.
-- [ ] `test_daemon_timeout_asks`: stub delays 2 s, `WARDEN_HOOK_TIMEOUT=0.5`; the hook finishes in < 1.5 s.
-- [ ] `test_slow_drip_body_asks`: stub sends headers and then one byte every 0.2 s for 3 s, `WARDEN_HOOK_TIMEOUT=0.5`; the hook finishes in < 1.5 s (proves the wall-clock deadline, Decision 2).
-- [ ] `test_non_200_asks`: parametrised 302, 404, 500.
-- [ ] `test_non_json_body_asks`
-- [ ] `test_oversized_body_asks`: > 64 KiB.
-- [ ] `test_invalid_verdict_shape_asks`: parametrised: no `decision`; `"Allow"`; `"maybe"`; `reason` is int; `system_message` is a list; body is a JSON array.
-- [ ] `test_non_loopback_url_asks_without_request`: `WARDEN_URL=http://example.com:8765`; the stub receives nothing.
-- [ ] `test_proxy_env_ignored`: `HTTP_PROXY` points to a second stub; the decision still comes from the real stub, and the proxy stub receives nothing.
-- [ ] `test_invalid_stdin_asks`: parametrised: garbage, empty, `[1,2]`, invalid UTF-8 bytes. No request reaches the stub.
-- [ ] `test_unwritable_home_still_decides`: unwritable `AGENTWARDEN_HOME` plus a stub deny gives the deny output.
-- [ ] `test_failsafe_respects_notify_off`: `WARDEN_NOTIFY=off`, daemon down; there is no `systemMessage` key.
-- [ ] `test_hook_timeout_env_clamped`: unit-level: `"0"`, `"-1"`, `"abc"` give 8; `"99"` gives 10.
+- [x] `test_daemon_unreachable_asks`: `WARDEN_URL` at a closed port.
+- [x] `test_daemon_timeout_asks`: stub delays 2 s, `WARDEN_HOOK_TIMEOUT=0.5`; the hook finishes in < 1.5 s.
+- [x] `test_slow_drip_body_asks`: stub sends headers and then one byte every 0.2 s for 3 s, `WARDEN_HOOK_TIMEOUT=0.5`; the hook finishes in < 1.5 s (proves the wall-clock deadline, Decision 2).
+- [x] `test_non_200_asks`: parametrised 302, 404, 500.
+- [x] `test_non_json_body_asks`
+- [x] `test_oversized_body_asks`: > 64 KiB.
+- [x] `test_invalid_verdict_shape_asks`: parametrised: no `decision`; `"Allow"`; `"maybe"`; `reason` is int; `system_message` is a list; body is a JSON array.
+- [x] `test_non_loopback_url_asks_without_request`: `WARDEN_URL=http://example.com:8765`; the stub receives nothing.
+- [x] `test_proxy_env_ignored`: `HTTP_PROXY` points to a second stub; the decision still comes from the real stub, and the proxy stub receives nothing.
+- [x] `test_invalid_stdin_asks`: parametrised: garbage, empty, `[1,2]`, invalid UTF-8 bytes. No request reaches the stub.
+- [x] `test_unwritable_home_still_decides`: unwritable `AGENTWARDEN_HOME` plus a stub deny gives the deny output.
+- [x] `test_failsafe_respects_notify_off`: `WARDEN_NOTIFY=off`, daemon down; there is no `systemMessage` key.
+- [x] `test_hook_timeout_env_clamped`: unit-level: `"0"`, `"-1"`, `"abc"` give 8; `"99"` gives 10.
 
 End to end (real daemon, no network beyond loopback, not `slow`):
-- [ ] `test_e2e_real_daemon_denies_ssh_key`: uvicorn serves `create_app(tmp_db)` on a free loopback port in a thread; the hook gets a `Read ~/.ssh/id_rsa` event; stdout is a deny with a 🛡 `systemMessage`; the audit row exists.
+- [x] `test_e2e_real_daemon_denies_ssh_key`: uvicorn serves `create_app(tmp_db)` on a free loopback port in a thread; the hook gets a `Read ~/.ssh/id_rsa` event; stdout is a deny with a 🛡 `systemMessage`; the audit row exists.
 
 Daemon:
-- [ ] `test_decide_failsafe_has_system_message`: invalid body to `/decide` gives `ask` with `system_message` starting with `🛡 AgentWarden`.
-- [ ] `test_decide_failsafe_notify_off`: same with `WARDEN_NOTIFY=off` gives `system_message is None`.
-- [ ] Existing `decide()` notification tests still pass after the rename.
+- [x] `test_decide_failsafe_has_system_message`: invalid body to `/decide` gives `ask` with `system_message` starting with `🛡 AgentWarden`.
+- [x] `test_decide_failsafe_notify_off`: same with `WARDEN_NOTIFY=off` gives `system_message is None`.
+- [x] Existing `decide()` notification tests still pass after the rename.
 
 Settings and housekeeping:
-- [ ] `test_example_settings_files`: both example files are valid JSON; POSIX uses `python3`, Windows uses `python`; PreToolUse `timeout` is 15 and greater than the hook's maximum deadline of 10.
-- [ ] Spec 001 tests updated where behaviour intentionally changed (`test_on_tool_makes_no_decision`, `test_invalid_json_is_ignored` and `test_hooks_print_nothing` for `on_tool`). `on_prompt.py` tests stay unchanged.
-- [ ] `make test` green, `make lint` clean.
+- [x] `test_example_settings_files`: both example files are valid JSON; POSIX uses `python3`, Windows uses `python`; PreToolUse `timeout` is 15 and greater than the hook's maximum deadline of 10.
+- [x] Spec 001 tests updated where behaviour intentionally changed (`test_on_tool_makes_no_decision`, `test_invalid_json_is_ignored` and `test_hooks_print_nothing` for `on_tool`). `on_prompt.py` tests stay unchanged.
+- [x] `make test` green, `make lint` clean.
 - [ ] Manual (human, real Claude Code on Windows): copy the Windows example into a scratch project, `make run`, ask the agent to `cat ~/.ssh/id_rsa` and confirm a deny with the 🛡 line. Stop the daemon, run any Bash command, and confirm an `ask` with "AgentWarden unavailable". Record how `systemMessage` renders in the VS Code extension and the CLI in the `hook-protocol` skill (closes its VERIFY note).
 - [ ] Manual: confirm in the hooks docs whether a hook `permissionDecision: "allow"` overrides `deny` rules in `settings.json` permissions, and note the answer in `hook-protocol` (relevant to `WARDEN_ALLOW=explicit`).
 

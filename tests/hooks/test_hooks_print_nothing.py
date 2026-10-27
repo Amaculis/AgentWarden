@@ -20,9 +20,7 @@ FAILSAFE_REASON = "AgentWarden unavailable"
 
 @pytest.mark.parametrize("stdin_kind", ["valid", "invalid"])
 def test_hooks_print_nothing_on_prompt(tmp_path, stdin_kind):
-    stdin_text = (
-        json.dumps(SAMPLE_USER_PROMPT_SUBMIT) if stdin_kind == "valid" else "{{{ not json"
-    )
+    stdin_text = json.dumps(SAMPLE_USER_PROMPT_SUBMIT) if stdin_kind == "valid" else "{{{ not json"
 
     result = run_hook(ON_PROMPT, stdin_text, tmp_path)
 

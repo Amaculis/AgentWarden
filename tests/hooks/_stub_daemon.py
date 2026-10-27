@@ -15,6 +15,7 @@ wrap the bind in a try/except that turns it into a skip.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from collections.abc import Callable
@@ -90,10 +91,8 @@ class StubDaemon:
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(resp_body)))
                 self.end_headers()
-                try:
+                with contextlib.suppress(Exception):
                     self.wfile.write(resp_body)
-                except Exception:
-                    pass
 
             def _write_slow_drip(
                 self, status: int, resp_body: bytes, slow_drip: tuple[int, float, float]

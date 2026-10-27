@@ -119,4 +119,9 @@ Used by `hooks/on_read.py` (matcher `Read|WebFetch`). Fires after the tool ran, 
 }
 ```
 
-Keep these out of `.claude/settings.json` until dogfooding starts (29.10); put them in `examples/settings.agentwarden.json`.
+Keep these out of `.claude/settings.json` until dogfooding starts (29.10). Ready-made files (spec 005):
+
+- `examples/settings.agentwarden.json` — macOS/Linux, `python3`.
+- `examples/settings.agentwarden.windows.json` — Windows, `python` (`python3` on Windows is often missing or the Microsoft Store stub).
+
+Timeout budget: the hook's own call to `/decide` has a hard wall-clock deadline of 8 s (`WARDEN_HOOK_TIMEOUT`, clamped to at most 10 s), below the 15 s `timeout` in settings, so the hook always answers `ask` itself before Claude Code's timeout would let the action through. On `allow` the hook prints nothing by default (`WARDEN_ALLOW=passthrough`); `WARDEN_ALLOW=explicit` prints `permissionDecision: "allow"`.

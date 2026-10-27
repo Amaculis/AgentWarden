@@ -16,7 +16,7 @@ _SOURCE_LABELS = {
 }
 
 
-def _with_system_message(verdict: Verdict) -> Verdict:
+def with_system_message(verdict: Verdict) -> Verdict:
     """Attach a `systemMessage`-style note for deny/ask verdicts, unless disabled."""
     if verdict.decision == "allow":
         return verdict
@@ -42,4 +42,4 @@ def decide(event: ToolEvent) -> Verdict:
             risk=None,
             source="default",
         )
-    return _with_system_message(verdict)
+    return with_system_message(verdict)

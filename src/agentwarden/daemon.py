@@ -16,11 +16,17 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import Response
 
-from agentwarden.decide import decide
-from agentwarden.models import PromptEvent, ToolEvent, Verdict, failsafe
+from agentwarden.decide import decide, with_system_message
+from agentwarden.models import PromptEvent, ToolEvent, Verdict
+from agentwarden.models import failsafe as _bare_failsafe
 from agentwarden.store import Store
 
 logger = logging.getLogger("agentwarden.daemon")
+
+
+def failsafe(reason: str) -> Verdict:
+    """Fail-closed `ask` carrying the user-facing notification."""
+    return with_system_message(_bare_failsafe(reason))
 
 
 def _default_db_path() -> Path:
