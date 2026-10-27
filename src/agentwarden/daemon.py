@@ -11,10 +11,12 @@ import hmac
 import logging
 import os
 import secrets
+import sys
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -85,12 +87,60 @@ class RuleRequest(BaseModel):
     value: str
 
 
-def write_ui_url(directory: Path, port: int, token: str) -> Path:
+LOOPBACK_NAMES = {"127.0.0.1", "localhost", "[::1]", "::1"}
+
+
+def daemon_port() -> int:
+    """Port from WARDEN_URL, the same source the hooks use."""
+    try:
+        port = urlsplit(os.environ.get("WARDEN_URL") or "http://127.0.0.1:8765").port
+    except ValueError:
+        port = None
+    return port or 8765
+
+
+def dashboard_url(token: str) -> str:
     """Dashboard URL with the token in the #fragment (never sent to the server)."""
-    path = Path(directory) / "ui_url"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"http://127.0.0.1:{port}/#token={token}\n", encoding="utf-8")
-    return path
+    return f"http://127.0.0.1:{daemon_port()}/#token={token}"
+
+
+def _host_name(value: str) -> str:
+    value = value.strip().lower()
+    if value.startswith("["):
+        return value[: value.find("]") + 1] if "]" in value else value
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+def _trusted_hosts() -> set[str]:
+    extra = os.environ.get("WARDEN_TRUSTED_HOSTS", "")
+    return LOOPBACK_NAMES | {h.strip().lower() for h in extra.split(",") if h.strip()}
+
+
+def request_allowed(host: str | None, origin: str | None) -> bool:
+    """Host must be loopback (DNS rebinding); a present Origin must be loopback http."""
+    trusted = _trusted_hosts()
+    if host is None or _host_name(host) not in trusted:
+        return False
+    if origin is None:
+        return True
+    try:
+        parts = urlsplit(origin)
+    except ValueError:
+        return False
+    name = (parts.hostname or "").lower()
+    if ":" in name:
+        name = f"[{name}]"
+    return parts.scheme == "http" and name in trusted
+
+
+def valid_project_cwd(store: Store, cwd: str) -> bool:
+    """Absolute local path already seen in the audit log; never UNC (no network access)."""
+    if not cwd or cwd.startswith(("\\\\", "//")) or "\x00" in cwd:
+        return False
+    path = PureWindowsPath(cwd) if (len(cwd) > 1 and cwd[1] == ":") else PurePosixPath(cwd)
+    if not path.is_absolute():
+        return False
+    return store.has_cwd(cwd)
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
@@ -103,15 +153,18 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         app.state.store = Store(resolved_db_path)
         app.state.scan_slots = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
         app.state.ui_token = secrets.token_urlsafe(32)
-        port = int(os.environ.get("WARDEN_PORT") or 8765)
-        try:
-            url_file = write_ui_url(resolved_db_path.parent, port, app.state.ui_token)
-            logger.warning("AgentWarden dashboard: see %s for the URL with the UI token", url_file)
-        except OSError:
-            logger.exception("cannot write the dashboard URL file")
+        # Printed once to the daemon's own console; never written to disk or the log file.
+        print(f"AgentWarden dashboard: {dashboard_url(app.state.ui_token)}", file=sys.stderr)
         yield
 
     app = FastAPI(lifespan=lifespan)
+
+    @app.middleware("http")
+    async def loopback_only(request: Request, call_next):
+        if not request_allowed(request.headers.get("host"), request.headers.get("origin")):
+            logger.warning("refused request with untrusted Host/Origin")
+            return Response(status_code=403, content="AgentWarden: untrusted host or origin")
+        return await call_next(request)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -242,7 +295,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return HTMLResponse(html)
 
     @app.get("/policy")
-    async def get_policy(cwd: str) -> dict:
+    async def get_policy(cwd: str, request: Request) -> dict:
+        if not valid_project_cwd(request.app.state.store, cwd):
+            raise HTTPException(status_code=400, detail="AgentWarden: unknown project directory")
         path = policy_module.policy_file(cwd)
         loaded = policy_module.load_policy(cwd)
         return {"path": str(path), "exists": path.exists(), "policy": loaded.model_dump()}
@@ -254,6 +309,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         if not hmac.compare_digest(token.encode(), expected.encode()):
             logger.warning("policy change refused: missing or wrong UI token")
             raise HTTPException(status_code=403, detail="AgentWarden: UI token required")
+        if not valid_project_cwd(request.app.state.store, body.cwd):
+            raise HTTPException(status_code=400, detail="AgentWarden: unknown project directory")
         path = policy_module.policy_file(body.cwd)
         try:
             added = policy_module.append_rule(path, body.kind, body.value)

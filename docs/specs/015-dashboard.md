@@ -36,6 +36,10 @@ secondary on purpose: the organisers list "dashboards as the main feature" as ov
   replace). Leading `#` comment lines are kept; other comments are lost (documented trade-off,
   no ruamel dependency). Built-in hard denies are unaffected: they run before the policy stage.
 
+Superseded by 018: the token URL is printed to the daemon console only (no `ui_url` file),
+requests need a loopback `Host`/`Origin`, and `cwd` must be a local path already in the audit
+log.
+
 ## Failure paths
 
 - Unreadable/invalid existing policy YAML → `400`, file left untouched (never overwrite a

@@ -7,7 +7,7 @@ reason and a safer alternative, and the agent finishes the real task.
 ## Prerequisites
 
 1. `make install`, then `make run` in this repository (daemon on 127.0.0.1:8765). The daemon
-   log points to `~/.agentwarden/ui_url` — open that URL in VS Code `Simple Browser: Show`
+   prints the dashboard URL to its console — open that URL in VS Code `Simple Browser: Show`
    for the dashboard (the token is in the `#fragment`).
 2. Environment for the daemon:
    - `WARDEN_JUDGE=cascade` with `WARDEN_LOCAL_BASE`/`WARDEN_LOCAL_MODEL` (local Meta model)

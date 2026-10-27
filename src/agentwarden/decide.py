@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 
 from agentwarden.cascade import decide_with_cascade
 from agentwarden.judge import SessionContext, env_float, judge
@@ -25,9 +26,18 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 # The alternative is model text shaped by attacker-controlled content and is shown to the
 # agent in AgentWarden's voice: anything that looks like a command or a URL is dropped.
 _COMMAND_LIKE = re.compile(
-    r"://|[|;>`]|&&|\$\(|\b(?:curl|wget|base64|eval|nc|ncat|powershell|iex)\b|\bsh\s+-c\b",
+    r"://|[|;>`]|&&|\$\(|\b(?:curl|wget|base64|eval|nc|ncat|powershell|iex)\b|\bsh\s+-c\b"
+    r"|\b[\w-]+\.(?:com|net|org|io|sh|dev|xyz|ru|cn|app|site|invalid)\b"
+    r"|\.(?:sh|ps1|bat|cmd|exe|py|js)\b"
+    r"|\b(?:install|download|fetch|execute|paste|run)\b",
     re.IGNORECASE,
 )
+
+
+def clean_text(text: str) -> str:
+    """NFKC-normalise and drop control/format characters (bidi overrides, zero-width)."""
+    text = unicodedata.normalize("NFKC", text)
+    return "".join(" " if unicodedata.category(c) in ("Cc", "Cf") else c for c in text)
 
 
 def usable_alternative(text: str | None) -> str | None:
@@ -35,15 +45,20 @@ def usable_alternative(text: str | None) -> str | None:
         return None
     if "\n" in text.strip() or "\r" in text.strip():
         return None
-    line = " ".join(_CONTROL.sub(" ", text).split())
+    line = " ".join(clean_text(text).split())
     if not line or len(line) > MAX_ALTERNATIVE or _COMMAND_LIKE.search(line):
         return None
     return line
 
 
-def with_alternative(verdict: Verdict) -> Verdict:
-    """On deny, append a vetted safer alternative to the reason the agent sees."""
+def with_alternative(verdict: Verdict, tainted: bool = False) -> Verdict:
+    """On deny, append a vetted safer alternative to the reason the agent sees.
+
+    A model alternative is dropped when the session read flagged content (spec 018).
+    """
     alternative = usable_alternative(verdict.safer_alternative)
+    if tainted and verdict.source == "judge":
+        alternative = None
     if verdict.decision != "deny" or alternative is None:
         return verdict.model_copy(update={"safer_alternative": alternative})
     reason = f"{verdict.reason} Safer alternative: {alternative}"
@@ -147,4 +162,5 @@ def decide(
             risk=None,
             source="default",
         )
-    return with_system_message(with_alternative(verdict))
+    tainted = bool(context is not None and context.taints)
+    return with_system_message(with_alternative(verdict, tainted))

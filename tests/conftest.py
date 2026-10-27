@@ -31,6 +31,8 @@ def _no_real_model(request, monkeypatch, tmp_path):
     # Never write the verdict cache into the developer's home directory.
     monkeypatch.setenv("WARDEN_CACHE_PATH", str(tmp_path / "verdict-cache.sqlite"))
     monkeypatch.delenv("WARDEN_CACHE", raising=False)
+    # FastAPI TestClient sends Host: testserver; the daemon only trusts loopback (spec 018).
+    monkeypatch.setenv("WARDEN_TRUSTED_HOSTS", "testserver")
     if request.node.get_closest_marker("slow") is None:
         real_handle = httpx.HTTPTransport.handle_request
 

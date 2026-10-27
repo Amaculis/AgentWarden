@@ -25,7 +25,7 @@ Contract (sections, in this order):
    AgentWarden off (built-in hard denies + UI token), Standard tier only (never Contributor).
 5. Quick start: `make install`, write the two prompts, env vars (`WARDEN_JUDGE`,
    `META_API_KEY`, `WARDEN_LOCAL_BASE`, `WARDEN_LOCAL_MODEL`), `make run`, copy the hooks from
-   `examples/` into `.claude/settings.json`, open the dashboard URL from `~/.agentwarden/ui_url`.
+   `examples/` into `.claude/settings.json`, open the dashboard URL the daemon prints at startup.
 6. Try the demo: `python demo/setup_demo.py ../northwind-demo` and the prompt from docs/demo.md.
 7. Evaluation: `make eval`, `make eval-scan`, `make redteam`; leave a results table
    placeholder (`<!-- results: four-mode table -->`, `<!-- red-team rounds -->`) — numbers are

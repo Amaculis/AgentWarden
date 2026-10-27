@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Literal
 
@@ -137,6 +138,8 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _one_line(text: str, limit: int) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(" " if unicodedata.category(c) in ("Cc", "Cf") else c for c in text)
     line = " ".join(_CONTROL.sub(" ", text).split())
     return line if len(line) <= limit else line[: limit - 3] + "..."
 

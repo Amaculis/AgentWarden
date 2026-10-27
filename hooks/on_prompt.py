@@ -31,7 +31,7 @@ def main() -> None:
     except Exception:
         return
     try:
-        raw = sys.stdin.read()
+        raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
         event = _common.read_stdin_json(raw)
         if event is None:
             return

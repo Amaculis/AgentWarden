@@ -176,7 +176,14 @@ def _any_path_matches(event: ToolEvent, globs: list[str], *, include_command: bo
     )
 
 
-def _command_matches(command: str, prefixes: list[str]) -> bool:
+_SHELL_OPERATORS = re.compile(r"&&|\|\||[;|<>`\n]|\$\(")
+
+
+def _command_matches(command: str, prefixes: list[str], *, exact_tail: bool = False) -> bool:
+    """Prefix match. With `exact_tail` (allow rules) the rest may not chain other commands:
+    `allow_commands: [npm test]` must not allow `npm test && curl ... | sh`."""
+    if exact_tail and _SHELL_OPERATORS.search(command):
+        return False
     collapsed = " ".join(command.split()).lower()
     return any(
         collapsed == prefix.lower() or collapsed.startswith(prefix.lower() + " ")
@@ -184,7 +191,9 @@ def _command_matches(command: str, prefixes: list[str]) -> bool:
     )
 
 
-def _any_command_matches(event: ToolEvent, prefixes: list[str]) -> bool:
+def _any_command_matches(
+    event: ToolEvent, prefixes: list[str], *, exact_tail: bool = False
+) -> bool:
     if not prefixes:
         return False
     if event.tool_name not in ("Bash", "PowerShell"):
@@ -192,7 +201,7 @@ def _any_command_matches(event: ToolEvent, prefixes: list[str]) -> bool:
     command = _get_str(event.tool_input, "command")
     if command is None:
         return False
-    return _command_matches(command, prefixes)
+    return _command_matches(command, prefixes, exact_tail=exact_tail)
 
 
 def _host_matches_domain(host: str, domain: str) -> bool:
@@ -283,8 +292,11 @@ def append_rule(path: Path | str, kind: str, value: str) -> bool:
     content = "\n".join([*header, body]) if header else body
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(content, encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(content, encoding="utf-8", newline="\n")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     _cache.pop(str(path), None)
     return True
 
@@ -301,7 +313,7 @@ def match(policy: Policy, event: ToolEvent) -> Verdict | None:
         return _ask("this path or command needs confirmation by policy")
     if (
         _any_path_matches(event, policy.allow_paths)
-        or _any_command_matches(event, policy.allow_commands)
+        or _any_command_matches(event, policy.allow_commands, exact_tail=True)
         or _any_domain_matches(event, policy.allow_domains)
     ):
         return _allow("this path, command or domain is allowed by policy")

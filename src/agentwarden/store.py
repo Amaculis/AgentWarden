@@ -221,6 +221,14 @@ class Store:
         finally:
             conn.close()
 
+    def has_cwd(self, cwd: str) -> bool:
+        conn = self._connect()
+        try:
+            row = conn.execute("SELECT 1 FROM decisions WHERE cwd = ? LIMIT 1", (cwd,)).fetchone()
+        finally:
+            conn.close()
+        return row is not None
+
     def recent_scans(self, limit: int = 50, session_id: str | None = None) -> list[dict]:
         conn = self._connect()
         try:

@@ -26,8 +26,8 @@ Contract (all JSON, same origin, daemon on 127.0.0.1):
   `200 {"ok": true, "added": bool, "path"}`, `400 {"detail"}` invalid rule, `403` bad token.
 - Token: read it once from `location.hash` (`#token=...`), keep it in memory, then
   `history.replaceState` to drop the hash from the URL bar. Never put it in localStorage,
-  query strings or logs. No token → buttons disabled with a hint "open the URL from
-  ~/.agentwarden/ui_url".
+  query strings or logs. No token → buttons disabled with a hint "open the dashboard URL printed in the
+  daemon console".
 
 Page behaviour:
 
@@ -57,7 +57,7 @@ Done when:
 
 - `python -m pytest -q` still green (no test changes needed; the page is not tested by
   pytest).
-- `make run`, open the URL from `~/.agentwarden/ui_url` in VS Code `Simple Browser: Show`:
+- `make run`, open the dashboard URL printed in the daemon console in VS Code `Simple Browser: Show`:
   the feed lists events from `/log`, a new decision appears within 2 s, and "Always deny" on
   an ask row writes the rule (visible in the policy panel).
 

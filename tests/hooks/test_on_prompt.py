@@ -93,3 +93,20 @@ def test_on_prompt_non_loopback_url_not_called(tmp_path, stub_daemon):
     assert result.returncode == 0
     assert result.stdout == ""
     assert stub_daemon.request_count == 0
+
+
+def test_on_prompt_utf8_on_cp1252_console(tmp_path, stub_daemon):
+    stub_daemon.status, stub_daemon.body = 204, b""
+    payload = {
+        **SAMPLE_USER_PROMPT_SUBMIT,
+        "prompt": "\u041f\u043e\u0447\u0438\u043d\u0438 \u0441\u0442\u0438\u043b\u0438",
+    }
+    result = run_hook(
+        ON_PROMPT,
+        json.dumps(payload, ensure_ascii=False),
+        tmp_path,
+        env={"WARDEN_URL": stub_daemon.url, "PYTHONIOENCODING": "cp1252"},
+    )
+    assert result.returncode == 0
+    sent = json.loads(stub_daemon.last_request.body)
+    assert sent["prompt"] == payload["prompt"]
