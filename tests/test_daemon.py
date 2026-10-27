@@ -57,6 +57,54 @@ def test_decide_invalid_json_is_ask(tmp_path):
         assert log_response.json() == []
 
 
+# ---------------------------------------------------------------------------
+# spec 005: every /decide failsafe (deny/ask) must carry a system_message,
+# via decide.py's renamed public `with_system_message`. These fail now
+# (ImportError on the rename, or a bare failsafe() with no system_message)
+# until spec 005 wires daemon.py's error branches through it.
+# ---------------------------------------------------------------------------
+
+
+def test_decide_failsafe_has_system_message(tmp_path):
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/decide",
+            content=b"not json at all {{{",
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision"] == "ask"
+    assert body["source"] == "failsafe"
+    assert body["system_message"] is not None
+    assert body["system_message"].startswith("\U0001f6e1 AgentWarden")
+
+
+def test_decide_failsafe_notify_off(tmp_path, monkeypatch):
+    monkeypatch.setenv("WARDEN_NOTIFY", "off")
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/decide",
+            content=b"not json at all {{{",
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision"] == "ask"
+    assert body["source"] == "failsafe"
+    assert body["system_message"] is None
+
+
+def test_with_system_message_is_public_on_decide_module():
+    import agentwarden.decide as decide_module
+
+    assert hasattr(decide_module, "with_system_message")
+
+
 def test_decide_invalid_event_is_ask(tmp_path):
     app = _make_app(tmp_path)
     payload = {**BASH_PRE_TOOL_USE}
