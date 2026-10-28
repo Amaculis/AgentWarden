@@ -198,7 +198,9 @@ def _is_secret_path(raw_path: str) -> bool:
     if basename == ".env" or (basename.startswith(".env.") and basename not in ENV_SAFE_BASENAMES):
         return True
     if ".ssh" in parts[:-1]:
-        return not (basename.endswith(".pub") or basename == "known_hosts")
+        # config holds only host aliases and key file paths (fixed format), never key
+        # material, unlike id_rsa etc. — safe to read, same as known_hosts.
+        return not (basename.endswith(".pub") or basename in ("known_hosts", "config"))
     if ".aws" in parts[:-1] and basename == "credentials":
         return True
     if _is_cloud_or_browser_secret(parts):
@@ -224,7 +226,7 @@ def _is_secret_glob(glob_str: str) -> bool:
 _DOTENV_RE = re.compile(r"\.env(\.[A-Za-z0-9_-]+)?\b", re.IGNORECASE)
 
 _SECRET_MENTION_PATTERNS = (
-    re.compile(r"\.ssh/(?![^\s'\"]*\.pub\b)(?!known_hosts\b)\S+", re.IGNORECASE),
+    re.compile(r"\.ssh/(?![^\s'\"]*\.pub\b)(?!known_hosts\b)(?!config\b)\S+", re.IGNORECASE),
     re.compile(r"\bid_rsa\b(?!\.pub)", re.IGNORECASE),
     re.compile(r"\bid_ed25519\b(?!\.pub)", re.IGNORECASE),
     re.compile(r"\bid_ecdsa\b(?!\.pub)", re.IGNORECASE),

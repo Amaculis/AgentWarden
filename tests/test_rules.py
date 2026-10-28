@@ -88,7 +88,6 @@ SECRET_PATHS = [
     "D:\\proj\\id_ed25519",
     "D:\\proj\\id_ecdsa",
     "D:\\proj\\id_dsa",
-    "D:\\proj\\.ssh\\config",
     "D:\\proj\\.ssh/anything",
     "D:\\proj\\.netrc",
     "D:\\proj\\.pgpass",
@@ -124,6 +123,7 @@ LOOKALIKES = [
     "env.py",
     "id_rsa.pub",
     ".ssh/known_hosts",
+    ".ssh/config",
     "keyboard.py",
     "monkey.pem.md",
 ]
@@ -134,6 +134,20 @@ def test_secret_lookalikes_not_denied(path):
     verdict = evaluate(_read("D:\\proj\\" + path.replace("/", "\\")))
 
     assert verdict is None or verdict.decision != "deny"
+
+
+@pytest.mark.parametrize("path", ["~/.ssh/config", ".ssh/config", "D:\\proj\\.ssh\\config"])
+def test_ssh_config_read_allowed(path):
+    verdict = evaluate(_read(path))
+
+    assert verdict is None or verdict.decision != "deny"
+
+
+def test_ssh_key_still_denied():
+    verdict = evaluate(_read("~/.ssh/id_rsa"))
+
+    assert verdict is not None
+    assert verdict.decision == "deny"
 
 
 def test_write_secret_is_ask():
@@ -157,6 +171,26 @@ SECRET_MENTION_COMMANDS = [
 @pytest.mark.parametrize("command", SECRET_MENTION_COMMANDS)
 def test_shell_secret_mentions_denied(command):
     verdict = evaluate(_bash(command))
+
+    assert verdict is not None
+    assert verdict.decision == "deny"
+
+
+SSH_CONFIG_MENTION_NOT_DENIED = [
+    "cat ~/.ssh/config",
+    "ssh -F .ssh/config -vT git@github.com",
+]
+
+
+@pytest.mark.parametrize("command", SSH_CONFIG_MENTION_NOT_DENIED)
+def test_ssh_config_shell_mention_allowed(command):
+    verdict = evaluate(_bash(command))
+
+    assert verdict is None or verdict.decision != "deny"
+
+
+def test_ssh_key_shell_mention_still_denied():
+    verdict = evaluate(_bash("cat ~/.ssh/id_rsa"))
 
     assert verdict is not None
     assert verdict.decision == "deny"
