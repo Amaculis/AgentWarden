@@ -26,9 +26,11 @@ def test_aws_access_key_id_redacted():
 
 def test_private_key_block_redacted():
     pem = (
-        "-----BEGIN RSA " "PRIVATE KEY-----\n"
+        "-----BEGIN RSA "
+        "PRIVATE KEY-----\n"
         "MIIFAKEKEYDATAFAKEKEYDATAFAKEKEYDATAFAKEKEYDATA==\n"
-        "-----END RSA " "PRIVATE KEY-----"
+        "-----END RSA "
+        "PRIVATE KEY-----"
     )
     text = f"Here is the key:\n{pem}\nplease rotate it"
     out = redact(text)
@@ -43,7 +45,7 @@ def test_github_token_redacted():
 
 
 def test_sk_style_api_key_redacted():
-    secret = "sk-ant-" "FAKE1234567890123456789012"
+    secret = "sk-ant-" + "FAKE1234567890123456789012"
     text = f"export ANTHROPIC_API_KEY={secret}"
     _redacted_and_marked(text, secret)
 
@@ -171,7 +173,7 @@ def test_redact_is_linear_on_adversarial_input(unit, count):
         ("mysql -u root -pS3cretPass db", "S3cretPass"),
         ("psql --password S3cretPass", "S3cretPass"),
         ("Authorization: Basic YWRtaW46cGFzcw==", "YWRtaW46cGFzcw=="),
-        ("STRIPE=sk_" "live_FAKEFAKEFAKE1234", "sk_" "live_FAKEFAKEFAKE1234"),
+        ("STRIPE=sk_" + "live_FAKEFAKEFAKE1234", "sk_" + "live_FAKEFAKEFAKE1234"),
         ("AIza" + "F" * 35, "AIza" + "F" * 35),
         ("hf_" + "F" * 25, "hf_" + "F" * 25),
         ("npm_" + "F" * 36, "npm_" + "F" * 36),
