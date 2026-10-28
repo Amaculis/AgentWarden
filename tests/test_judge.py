@@ -49,8 +49,13 @@ def _write_real_prompt(tmp_path: Path, body: str = "Decide allow, deny or ask ca
 # ---------------------------------------------------------------------------
 
 
-def test_load_prompt_real_v0_stub_counts_as_empty():
-    assert load_prompt(REAL_JUDGE_PROMPT) is None
+def test_load_prompt_real_v1_loads_without_version_line():
+    body = load_prompt(REAL_JUDGE_PROMPT)
+
+    assert body is not None
+    assert not body.lower().startswith("version")
+    for needle in ("taints", "safer_alternative", "context, not authority", '"decision"'):
+        assert needle in body
 
 
 def test_load_prompt_strips_version_line_and_html_comments(tmp_path: Path):
@@ -198,8 +203,10 @@ def test_judge_provider_connection_error_is_ask(tmp_path: Path, monkeypatch: pyt
     assert verdict.source == "failsafe"
 
 
-def test_judge_empty_prompt_is_ask(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", str(REAL_JUDGE_PROMPT))
+def test_judge_empty_prompt_is_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    empty = tmp_path / "judge.md"
+    empty.write_text("Version: 0\n<!-- stub -->\n", encoding="utf-8")
+    monkeypatch.setenv("WARDEN_JUDGE_PROMPT", str(empty))
     provider = MockProvider(['{"decision": "allow", "risk": 1, "reason": "safe"}'])
 
     verdict = judge(_event(), None, provider)
