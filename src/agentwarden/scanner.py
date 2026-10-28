@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "scanner.md"
 MIN_CHARS = 40
 TRUNCATION_MARK = "\n...[truncated]...\n"
-MAX_TOKENS = 200
+# Muse Spark is a reasoning model: hidden reasoning tokens count against this budget before any
+# visible output (measured: a clean injection case used ~500 reasoning+output tokens; VERIFY
+# with more cases). A cap sized for the JSON alone truncates the reply.
+MAX_TOKENS = 900
 MAX_QUOTE = 200
 WARNING_QUOTE = 80
 MAX_WARNING = 400

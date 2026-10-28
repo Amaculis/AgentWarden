@@ -5,7 +5,7 @@ description: How AgentWarden calls Meta models — Meta Model API client setup, 
 
 # Calling Meta models
 
-Status: facts below come from Meta's docs as summarised by third parties on 2026-10-26. Items marked VERIFY must be confirmed against dev.meta.ai docs and a real request, then this file updated.
+Status: facts below come from Meta's docs as summarised by third parties on 2026-10-26, except where marked **VERIFIED 28 Oct** (confirmed with a real request against the user's key). Items still marked VERIFY are unconfirmed.
 
 ## Which Meta model does what
 
@@ -21,17 +21,37 @@ Each role has its own prompt file in `prompts/` (human-owned, protected): `judge
 
 ## Client
 
-- Meta Model API is OpenAI-SDK compatible. Base URL: `https://api.meta.ai/v1` (VERIFY).
-- Use the `openai` Python client with `base_url` and `api_key` from env: `META_API_BASE`, `META_API_KEY`. Never hard-code or log the key.
-- Model from env `WARDEN_MODEL`. Default: the Standard Muse Spark model, e.g. `muse-spark-1.2` (VERIFY the current name via the models list; a newer version may exist).
+- Meta Model API is OpenAI-compatible at the request/response level. Base URL
+  `https://api.meta.ai/v1`, endpoint `POST /chat/completions`, auth `Authorization: Bearer
+  <META_API_KEY>` — **VERIFIED 28 Oct** (real 200 response from `providers/meta_api.py`).
+- We do not use the `openai` SDK (removed, see `providers/openai_compat.py` — plain httpx);
+  the line above is for anyone probing the API by hand.
+- Model from env `WARDEN_MODEL`. Default `muse-spark-1.2` accepted by the API —
+  **VERIFIED 28 Oct**. Did not list all available models (no `/models` call made); if a newer
+  version exists it wasn't checked.
 - **Never use a `-contributor` model**: Contributor tier trains on prompts and code. AgentWarden sends code context.
+- **Muse Spark is a reasoning model.** It spends completion tokens on hidden reasoning before
+  any visible output; a `max_tokens` cap sized only for the JSON reply truncates `content` to
+  `null` (`finish_reason: "length"`, `reasoning_tokens` near the cap) — **VERIFIED 28 Oct**, hit
+  this with `max_tokens=20` and again at `300`. Fixed by raising `MAX_TOKENS` to 900 in
+  `judge.py` and `scanner.py`. A plain allow-case judge call used ~370 reasoning tokens before
+  ~50 tokens of JSON; a clear-injection scanner call used ~500 total. Harder cases may need
+  more — if truncation (`error="http"` with no exception) shows up in eval, raise further
+  rather than add retry logic.
 
 ## Request rules
 
 - `temperature=0`.
-- Hard timeout on every call: `WARDEN_JUDGE_TIMEOUT` seconds (default 6). Timeout or error → caller returns `ask`.
-- Cap `max_tokens` for the verdict (≈200 is enough).
-- Ask for JSON only. Judge: `{"decision": "allow|deny|ask", "risk": 0-100, "confidence": 0-1, "reason": "<one sentence>", "safer_alternative": "<one sentence or empty>"}`. Scanner: `{"injection": true|false, "confidence": 0-1, "quote": "<≤200 chars>", "reason": "<one sentence>"}`. Use the API's JSON / structured output mode if supported (VERIFY); otherwise extract the first JSON object and validate with pydantic. Anything that fails validation → `ask`.
+- Hard timeout on every call: `WARDEN_JUDGE_TIMEOUT` seconds (default 6). Timeout or error → caller returns `ask`. Measured latency at `max_tokens=900`: 1.3–3.3 s for single judge/scanner calls
+  (p50/p95 over a real sample not measured — only a handful of manual calls so far)
+  — **VERIFIED 28 Oct**, but close enough to the 6 s default that a harder case could time out;
+  revisit if eval shows frequent judge timeouts.
+- `max_tokens=900` (not ≈200 — see reasoning-token note above).
+- Ask for JSON only via prompt instructions; no separate JSON-mode / structured-output
+  parameter was sent or needed — the model returned a clean single JSON object as instructed
+  in both the plain-allow and clear-injection test calls — **VERIFIED 28 Oct**, but not tried
+  against an adversarial or ambiguous case yet, so still validate and extract the first JSON
+  object defensively (current code already does). Judge: `{"decision": "allow|deny|ask", "risk": 0-100, "confidence": 0-1, "reason": "<one sentence>", "safer_alternative": "<one sentence or empty>"}`. Scanner: `{"injection": true|false, "confidence": 0-1, "quote": "<≤200 chars>", "reason": "<one sentence>"}`. Anything that fails validation → `ask`.
 - Input is always redacted first (`redact.py`).
 - One retry at most, only on connection errors, within the same overall timeout.
 
@@ -63,10 +83,13 @@ Every provider records latency, tokens in/out and cost per call, so evals can re
 - Keep the local prompt short; put examples last. Measure latency with the real prompt, not a toy one.
 - Model id, hardware, p50/p95 and JSON reliability go here after the spike (VERIFY).
 
-## First request checklist (do once, then update this file)
+## First request checklist (28 Oct)
 
-- [ ] List available models; record exact Standard Muse Spark id.
-- [ ] Confirm base URL and auth header.
-- [ ] Confirm JSON mode support and how to request it.
-- [ ] Measure latency of a 1k-token judge request (p50 over 10 calls).
-- [ ] Confirm credits are applied in Billing.
+- [x] Confirm base URL and auth header — `https://api.meta.ai/v1`, `Authorization: Bearer`.
+- [x] Confirm `muse-spark-1.2` is accepted (not whether it's the newest — `/models` not called).
+- [x] Confirm JSON output works from prompt instructions alone, on 2 manual cases.
+- [x] Found and fixed the reasoning-token truncation bug (`max_tokens` 300→900).
+- [ ] List available models to check for a newer Muse Spark version.
+- [ ] Measure p50/p95 latency over ≥10 calls (only ~5 manual calls so far: 1.3–3.3 s).
+- [ ] Confirm credits are applied and pricing in Billing (page not opened this session).
+- [ ] Try an ambiguous/adversarial case against the real API to see if JSON still holds.
