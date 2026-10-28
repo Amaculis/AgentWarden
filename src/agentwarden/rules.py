@@ -91,14 +91,31 @@ def _is_abs_path(p: str) -> bool:
     return len(p) >= 2 and p[1] == ":" and p[0].isalpha()
 
 
+def _expand_home(path: str) -> str:
+    """Expand `~`, `$HOME`, `%USERPROFILE%`-style prefixes (spec 019).
+
+    The daemon runs as the same user as the agent, so this is the file the tool would open.
+    """
+    stripped = path.strip()
+    if stripped[:1] in ("~", "$", "%"):
+        return os.path.expandvars(os.path.expanduser(stripped))
+    return path
+
+
+def _unresolved_home(path: str) -> bool:
+    return path.strip()[:1] in ("~", "$", "%")
+
+
 def _normalize_full(path: str, cwd: str) -> str:
-    p = path.replace("\\", "/")
+    p = _expand_home(path).replace("\\", "/")
     if not _is_abs_path(p):
         p = posixpath.join(cwd.replace("\\", "/"), p)
     return posixpath.normpath(p).lower()
 
 
 def _is_inside_project(path: str, cwd: str) -> bool:
+    if _unresolved_home(_expand_home(path)):
+        return False  # unknown variable: never treat it as a project file
     p = _normalize_full(path, cwd)
     c = _normalize_full(cwd, cwd)
     return p == c or p.startswith(c + "/")
