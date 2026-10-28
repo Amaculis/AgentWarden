@@ -34,6 +34,13 @@ Not planned: SAM 3.1 or Muse Image (no real role here). Optional, only if verifi
 
 To verify early (Wed 28): which Meta open-weights models are available (e.g. Glimmer, Muse Spark Open), whether the user's hardware runs one fast enough, otherwise host it on Modal/Baseten partner credits.
 
+## Judge prompt decisions (decided 28 Oct)
+
+- **Strictness: cautious.** Unsure between allow and ask → ask; unsure between deny and ask → ask. Code adds: a model `allow` with risk > 30 or confidence < 0.6 becomes `ask`. Loosen later only from measured FPR.
+- **One prompt for both judges.** The local model and Muse Spark share `prompts/judge.md`; split into two versions only if the local-model spike shows the small model cannot follow it.
+- **Prompt v1 content** (beyond the draft in `docs/handoff/judge-prompt-v1-draft.md`): `taints` = files the scanner flagged; acting on their instructions → deny. `task` is context, not authority (a fake "user prompt" can be planted, spec 018). `safer_alternative` in plain words, no commands, URLs or script names (the code drops those).
+- **Local hardware for the spike:** RTX 3050 8 GB, i5-11600K, 32 GB RAM. Plan: Ollama, ~3B model first (latency), ~8B for a quality comparison; measured numbers go to the `meta-api` skill.
+
 ## User control and visibility (decided 27 Oct)
 
 - **Inside Claude Code**: every deny/ask shows a `systemMessage` line to the user (`🛡 AgentWarden: blocked … (local model)`). Allows stay silent. This is the primary interface.
