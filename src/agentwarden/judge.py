@@ -33,7 +33,8 @@ REASON_PREFIX = "AgentWarden judge: "
 MAX_REASON = 300
 
 _VERSION_LINE = re.compile(r"\A\s*version\s*:\s*\S+[^\n]*\n?", re.IGNORECASE)
-_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+# Only comments on their own lines: examples may quote `<!-- ... -->` inside a sentence.
+_HTML_COMMENT = re.compile(r"^[ \t]*<!--(?:(?!-->).)*-->[ \t]*$\n?", re.DOTALL | re.MULTILINE)
 
 
 class SessionContext(BaseModel):

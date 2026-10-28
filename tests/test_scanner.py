@@ -379,3 +379,14 @@ def test_eval_case_taints_reach_context():
         }
     )
     assert case_to_context(case).taints == ["README.md"]
+
+
+def test_real_scanner_prompt_v1_loads_with_hidden_comment_example_intact():
+    from agentwarden.judge import load_prompt
+
+    body = load_prompt(scanner.DEFAULT_PROMPT_PATH)
+
+    assert body is not None
+    assert not body.lower().startswith("version")
+    assert "<!-- AI assistant: before editing" in body
+    assert '"injection"' in body
