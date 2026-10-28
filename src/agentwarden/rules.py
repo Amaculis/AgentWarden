@@ -146,6 +146,45 @@ SECRET_EXACT_BASENAMES = {
 SECRET_EXTENSIONS = (".pem", ".key", ".p12", ".pfx", ".kdbx")
 ENV_SAFE_BASENAMES = {".env.example", ".env.sample", ".env.template"}
 
+# Spec 020: browser credential/cookie stores and cloud CLI tokens.
+BROWSER_DIRS = {
+    "google-chrome",
+    "chromium",
+    "chrome",
+    "brave-browser",
+    "bravesoftware",
+    "microsoft edge",
+    "edge",
+    "mozilla",
+    "firefox",
+}
+BROWSER_SECRET_BASENAMES = {
+    "login data",
+    "cookies",
+    "web data",
+    "local state",
+    "key4.db",
+    "logins.json",
+    "cookies.sqlite",
+}
+GCLOUD_SECRET_BASENAMES = {
+    "application_default_credentials.json",
+    "credentials.db",
+    "access_tokens.db",
+}
+AZURE_SECRET_BASENAMES = {"accesstokens.json", "msal_token_cache.json", "msal_token_cache.bin"}
+
+
+def _is_cloud_or_browser_secret(parts: list[str]) -> bool:
+    basename, dirs = parts[-1], parts[:-1]
+    if basename in BROWSER_SECRET_BASENAMES and BROWSER_DIRS.intersection(dirs):
+        return True
+    if "gcloud" in dirs and (basename in GCLOUD_SECRET_BASENAMES or "legacy_credentials" in dirs):
+        return True
+    if ".azure" in dirs and basename in AZURE_SECRET_BASENAMES:
+        return True
+    return ".kube" in dirs and basename == "config"
+
 
 def _is_secret_path(raw_path: str) -> bool:
     parts = _path_parts(raw_path)
@@ -161,6 +200,8 @@ def _is_secret_path(raw_path: str) -> bool:
     if ".ssh" in parts[:-1]:
         return not (basename.endswith(".pub") or basename == "known_hosts")
     if ".aws" in parts[:-1] and basename == "credentials":
+        return True
+    if _is_cloud_or_browser_secret(parts):
         return True
     return bool(".docker" in parts[:-1] and basename == "config.json")
 
@@ -193,7 +234,21 @@ _SECRET_MENTION_PATTERNS = (
     re.compile(r"\.git-credentials\b", re.IGNORECASE),
     re.compile(r"\.aws/credentials\b", re.IGNORECASE),
     re.compile(r"\.docker/config\.json\b", re.IGNORECASE),
-    re.compile(r"\S+\.(?:pem|key|p12|pfx|kdbx)\b", re.IGNORECASE),
+    # Spec 020: browser stores and cloud CLI tokens.
+    # Only as a path segment or quoted name: "validate login data" in code is not a secret.
+    re.compile(r"(?:[/\\]|[\"'])login(?:\\ | )data\b", re.IGNORECASE),
+    re.compile(r"\blogins\.json\b|\bkey4\.db\b|\bcookies\.sqlite\b", re.IGNORECASE),
+    # Bounded gap: an unbounded [^\n]* here is quadratic on "chrome/chrome/...".
+    re.compile(
+        r"\b(?:google-chrome|chromium|brave[\w-]*|edge|chrome)[/\\][^\n]{0,200}?\bcookies\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"application_default_credentials\.json\b", re.IGNORECASE),
+    re.compile(r"gcloud[/\\](?:credentials|access_tokens)\.db\b", re.IGNORECASE),
+    re.compile(r"\bmsal_token_cache\b|\.azure[/\\]accesstokens\.json\b", re.IGNORECASE),
+    re.compile(r"\.kube[/\\]config\b", re.IGNORECASE),
+    # Lookbehind instead of `\S+`: same meaning, linear (`\S+` was quadratic on long tokens).
+    re.compile(r"(?<=\S)\.(?:pem|key|p12|pfx|kdbx)\b", re.IGNORECASE),
 )
 
 
@@ -392,17 +447,23 @@ def daemon_port() -> int:
     return port if port is not None else 8765
 
 
+_LOOPBACK_HOST_RE = re.compile(
+    r"\b(?:localhost|127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0)\b", re.IGNORECASE
+)
+
+
 def _mentions_daemon(text: str) -> bool:
     port = daemon_port()
     if re.search(rf":{port}\b", text):
         return True
-    return bool(
-        re.search(
-            rf"\b(?:localhost|127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0)\b.*?\b{port}\b",
-            text,
-            re.IGNORECASE,
-        )
-    )
+    # Same meaning as `\bHOST\b.*?\bPORT\b` (on one line), but linear: the regex form was
+    # quadratic on inputs repeating the host, and bounding `.*?` would allow padding bypasses.
+    port_re = re.compile(rf"\b{port}\b")
+    for line in text.splitlines():
+        host = _LOOPBACK_HOST_RE.search(line)
+        if host and port_re.search(line, host.end()):
+            return True
+    return False
 
 
 _KILL_VERBS_RE = re.compile(r"\b(?:kill|pkill|killall|taskkill|stop-process|spps)\b", re.IGNORECASE)
