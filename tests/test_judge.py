@@ -249,9 +249,11 @@ def test_secret_never_reaches_provider(tmp_path: Path, monkeypatch: pytest.Monke
 
     aws_key = "AKIAFAKEFAKEFAKE1234"
     pem = (
-        "-----BEGIN RSA " "PRIVATE KEY-----\n"
+        "-----BEGIN RSA "
+        "PRIVATE KEY-----\n"
         "MIIFAKEKEYDATAFAKEKEYDATAFAKEKEYDATAFAKEKEYDATA==\n"
-        "-----END RSA " "PRIVATE KEY-----"
+        "-----END RSA "
+        "PRIVATE KEY-----"
     )
     context = SessionContext(
         task=f"rotate this key please: {aws_key}",
