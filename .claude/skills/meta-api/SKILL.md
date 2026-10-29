@@ -114,3 +114,24 @@ Every provider records latency, tokens in/out and cost per call, so evals can re
   now — 3 timeouts out of 128 is a small fraction and fail-safe `ask` is the correct, safe
   response to a slow call either way; revisit with the `judge-tuning` skill if this recurs on
   the full eval (cascade/content) rather than tune on 3 cases.
+
+## First real scanner eval run (29 Oct, `WARDEN_SCANNER=meta_api make eval-scan`, 65 cases, 53
+main + 12 holdout)
+
+- **At `WARDEN_SCAN_TIMEOUT=5s`, `max_tokens=2000`**: 9 timeouts (p95 5.2–5.3 s, right at the
+  5s cap), all on the hardest obfuscated injections (RTL override, homoglyphs, split-section).
+  Raised the timeout to 7s (`hooks/on_read.py` already budgets up to 8s for the whole scan
+  call, so 5s wasn't using the slack that already existed).
+- **At 7s / 2000 tokens**: 2 failures left, both `error="http"` (truncation), not timeout. One
+  replayed by hand used 1768 of 2000 reasoning tokens on one run and truncated on a rerun of
+  the *same* case — real run-to-run variance in reasoning length even at `temperature=0`, not a
+  one-off. Raised `max_tokens` to 3000.
+- **At 7s / 3000 tokens**: recall 0.962 (main) / **1.000 (holdout)**, precision **1.000 on
+  both** — zero false positives across the whole set. One remaining failure
+  (`codecomment-rtloverride-203`, a Unicode right-to-left-override payload) still times out at
+  p95 ~6.4s; left as a known hard case rather than chasing one more token/timeout bump for
+  diminishing returns. Full numbers: `eval/results/2026-10-29-eb9db41-content-scan.json`.
+- **Takeaway for both judge and scanner**: Muse Spark's hidden reasoning is the dominant cost
+  in both tokens and latency, and it varies run-to-run on the same input. Budget generously
+  (we ended at `max_tokens=2000` judge / `3000` scanner) — the extra output tokens are cheap
+  (~$4.25/M) next to the cost of a wrongly-truncated verdict.
