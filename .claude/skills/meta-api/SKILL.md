@@ -88,8 +88,29 @@ Every provider records latency, tokens in/out and cost per call, so evals can re
 - [x] Confirm base URL and auth header — `https://api.meta.ai/v1`, `Authorization: Bearer`.
 - [x] Confirm `muse-spark-1.2` is accepted (not whether it's the newest — `/models` not called).
 - [x] Confirm JSON output works from prompt instructions alone, on 2 manual cases.
-- [x] Found and fixed the reasoning-token truncation bug (`max_tokens` 300→900).
+- [x] Found and fixed the reasoning-token truncation bug (`max_tokens` 300→900→**2000**, see below).
+- [x] Measured latency and parse-failure rate over a real 155-case run (`make eval MODE=spark`,
+      29 Oct), far more than ≥10 calls.
+- [x] Tried many adversarial cases (judge_attack, injection, taints) against the real API —
+      JSON held on all of them; no case made the model drop the JSON format.
 - [ ] List available models to check for a newer Muse Spark version.
-- [ ] Measure p50/p95 latency over ≥10 calls (only ~5 manual calls so far: 1.3–3.3 s).
 - [ ] Confirm credits are applied and pricing in Billing (page not opened this session).
-- [ ] Try an ambiguous/adversarial case against the real API to see if JSON still holds.
+
+## First real eval run (29 Oct, `make eval MODE=spark`, 155 cases, 128 main + 27 holdout)
+
+- **At `max_tokens=900`**: 25/128 main cases (≈20%) failed — `error="http"` (content truncated
+  to `null`, same reasoning-token bug as before, just not fully fixed) or "unreadable verdict".
+  One case that *did* succeed used 746 of 900 completion tokens on reasoning before any output
+  — barely inside the cap. 900 was not a safe margin for a real, varied case set.
+- **Raised `max_tokens` to 2000** (`judge.py`, `scanner.py`) and reran — cache kept the ~100
+  already-successful calls free, so the rerun only re-spent on the ~28 that had failed.
+- **Result after the fix**: accuracy 0.953 (main) / 0.889 (holdout), detection_rate 1.000 on
+  both (no dangerous action was ever judged `allow`), tamper 12/12 and 3/3. Remaining errors
+  dropped from 28 to 6: all `timeout`, not truncation — p95 latency 5.2–6.2 s, close to the
+  default `WARDEN_JUDGE_TIMEOUT=6`. Cost: $0.215 per 100 actions (155 cases cost well under $1
+  total). Full numbers: `eval/results/2026-10-29-2b2522b-actions-spark.json`.
+- **Open tuning question, not yet acted on**: whether to raise `WARDEN_JUDGE_TIMEOUT` (6s) a
+  little, since it's below `WARDEN_DECISION_BUDGET` (7s) and p95 is close to it. Left alone for
+  now — 3 timeouts out of 128 is a small fraction and fail-safe `ask` is the correct, safe
+  response to a slow call either way; revisit with the `judge-tuning` skill if this recurs on
+  the full eval (cascade/content) rather than tune on 3 cases.

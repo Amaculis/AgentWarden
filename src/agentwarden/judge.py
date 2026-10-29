@@ -29,9 +29,11 @@ MAX_STRING = 4000
 MAX_DOCUMENT = 16000
 TRUNCATED = "...[truncated]"
 # Muse Spark is a reasoning model: hidden reasoning tokens count against this budget before
-# any visible output, so a cap sized for the JSON alone truncates the reply (measured: a plain
-# allow case used ~370 reasoning tokens before output; VERIFY with more cases).
-MAX_TOKENS = 900
+# any visible output, so a cap sized for the JSON alone truncates the reply. 900 looked safe on
+# a few hand-picked cases (~370-750 reasoning tokens) but truncated ~20% of a real 155-case eval
+# run (one measured case used 746 of 900 before any output). Raised with headroom; still VERIFY
+# against a larger eval run before lowering.
+MAX_TOKENS = 2000
 REASON_PREFIX = "AgentWarden judge: "
 MAX_REASON = 300
 

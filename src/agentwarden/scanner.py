@@ -28,9 +28,9 @@ DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "scanner
 MIN_CHARS = 40
 TRUNCATION_MARK = "\n...[truncated]...\n"
 # Muse Spark is a reasoning model: hidden reasoning tokens count against this budget before any
-# visible output (measured: a clean injection case used ~500 reasoning+output tokens; VERIFY
-# with more cases). A cap sized for the JSON alone truncates the reply.
-MAX_TOKENS = 900
+# visible output. 900 truncated ~20% of a real judge eval run at the same cap (see judge.py);
+# raised with the same headroom here, not yet separately measured against a real scanner run.
+MAX_TOKENS = 2000
 MAX_QUOTE = 200
 WARNING_QUOTE = 80
 MAX_WARNING = 400
