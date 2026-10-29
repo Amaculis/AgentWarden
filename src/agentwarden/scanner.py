@@ -28,9 +28,11 @@ DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "scanner
 MIN_CHARS = 40
 TRUNCATION_MARK = "\n...[truncated]...\n"
 # Muse Spark is a reasoning model: hidden reasoning tokens count against this budget before any
-# visible output. 900 truncated ~20% of a real judge eval run at the same cap (see judge.py);
-# raised with the same headroom here, not yet separately measured against a real scanner run.
-MAX_TOKENS = 2000
+# visible output, with real run-to-run variance even at temperature=0. 900 truncated ~20% of a
+# real judge eval run at the same cap (see judge.py). At 2000, a scanner content case framed as
+# an attack on AgentWarden itself used 1768 reasoning tokens on one run and truncated on
+# another -- raised again for margin against that variance.
+MAX_TOKENS = 3000
 MAX_QUOTE = 200
 WARNING_QUOTE = 80
 MAX_WARNING = 400
@@ -187,7 +189,9 @@ def scan(text: str, source: str, provider: Provider | None) -> ScanResult:
         if prompt is None:
             return done(error="scanner prompt not written")
         messages = build_messages(prepared, source, prompt)
-        timeout = env_float("WARDEN_SCAN_TIMEOUT", 5.0)
+        # hooks/on_read.py allows up to 8s total for the scan call; 5s measured too tight for
+        # Muse Spark's reasoning overhead on harder obfuscated cases (real eval p95: 5.2-5.3s).
+        timeout = env_float("WARDEN_SCAN_TIMEOUT", 7.0)
         result = provider.complete(messages, timeout=timeout, max_tokens=MAX_TOKENS)
         if result.error is not None:
             return done(error=result.error)
