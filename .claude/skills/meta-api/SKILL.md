@@ -135,3 +135,16 @@ main + 12 holdout)
   in both tokens and latency, and it varies run-to-run on the same input. Budget generously
   (we ended at `max_tokens=2000` judge / `3000` scanner) — the extra output tokens are cheap
   (~$4.25/M) next to the cost of a wrongly-truncated verdict.
+
+## First real red-team round (30 Oct, `redteam/run.py --rounds 1 --batch 5 --defender spark`)
+
+- **Fixed `max_tokens=6000` returned no content even for batch 5**: 5,998 of 6,000 completion
+  tokens went to reasoning (`finish_reason: "length"`, `content: null`, `refusal: null` — not a
+  refusal). A probe at 20,000 finished at 9,590 completion tokens (9,111 reasoning), ~37 s.
+- Budget now scales with the batch: `TOKENS_PER_CASE=4000`, timeout `max(60, 15 s × batch)`
+  (`redteam.py`); default batch lowered 20 → 5 (`Makefile`, CLI). Larger batches are untested:
+  the API's maximum output length is not verified — VERIFY before running batch > 5.
+- Muse Spark does write realistic attacks (base64 curl-pipe-bash from a tainted README, npm
+  postinstall persistence, reviewer-addressed judge attack) and benign look-alikes; no refusals.
+- Round 1 result: 5 generated, 5 valid, 0 bypasses, 0 over-blocks, $0.048. One round of 5 is
+  far too small to claim a bypass rate; it only proves the loop works end to end.

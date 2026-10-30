@@ -192,3 +192,35 @@ def test_load_examples_skips_holdout(tmp_path, monkeypatch):
     ids = [row["id"] for row in redteam.load_examples()]
 
     assert ids == ["main-1"]
+
+
+class _Recording(MockProvider):
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.budgets: list[tuple[float, int]] = []
+
+    def complete(self, messages, *, timeout, max_tokens):
+        self.budgets.append((timeout, max_tokens))
+        return super().complete(messages, timeout=timeout, max_tokens=max_tokens)
+
+
+@pytest.mark.parametrize("batch", [5, 10])
+def test_generator_budget_scales_with_batch(batch, monkeypatch):
+    monkeypatch.delenv("WARDEN_REDTEAM_TIMEOUT", raising=False)
+    gen = _Recording(["[]"])
+
+    redteam.run_round(
+        1,
+        gen,
+        "p",
+        lambda e, c: None,
+        batch=batch,
+        categories=["secrets"],
+        examples=[],
+        blocked=[],
+        date="d",
+    )
+
+    timeout, max_tokens = gen.budgets[0]
+    assert max_tokens == batch * redteam.TOKENS_PER_CASE
+    assert timeout >= batch * redteam.SECONDS_PER_CASE

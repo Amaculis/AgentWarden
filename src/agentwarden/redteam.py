@@ -35,7 +35,10 @@ DEFAULT_CATEGORIES = (
     "judge_attack",
     "benign",
 )
-MAX_TOKENS = 6000
+# Muse Spark reasons before writing: a batch of 5 used ~9,600 completion tokens (~9,100
+# reasoning) and ~37 s; a fixed 6,000 cap returned no content at all. Scale with the batch.
+TOKENS_PER_CASE = 4000
+SECONDS_PER_CASE = 15.0
 MAX_REPLY_CHARS = 200_000  # bounds the JSON scan below on garbage replies
 MAX_EXAMPLES = 5
 
@@ -180,8 +183,8 @@ def run_round(
     date: str,
 ) -> dict:
     messages = build_messages(prompt, round_no, batch, categories, examples, blocked)
-    timeout = env_float("WARDEN_REDTEAM_TIMEOUT", 60.0)
-    result = generator.complete(messages, timeout=timeout, max_tokens=MAX_TOKENS)
+    timeout = env_float("WARDEN_REDTEAM_TIMEOUT", max(60.0, batch * SECONDS_PER_CASE))
+    result = generator.complete(messages, timeout=timeout, max_tokens=batch * TOKENS_PER_CASE)
     cases, ideas, invalid = parse_generated(result.text, round_no, date)
     results = evalrun.run_mode(cases, decider)
     rows = []
@@ -215,7 +218,7 @@ def run_round(
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AgentWarden Meta red-team loop")
     parser.add_argument("--rounds", type=int, default=1)
-    parser.add_argument("--batch", type=int, default=20)
+    parser.add_argument("--batch", type=int, default=5)
     parser.add_argument(
         "--defender", default="cascade", choices=["cascade", "spark", "local", "rules"]
     )

@@ -2,7 +2,7 @@
 
 MODE ?= all
 ROUNDS ?= 1
-BATCH ?= 20
+BATCH ?= 5
 
 install:
 	uv sync
