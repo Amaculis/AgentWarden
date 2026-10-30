@@ -196,6 +196,7 @@ const RULE_KINDS = ["deny_paths", "ask_paths", "allow_paths", "deny_commands",
   "ask_commands", "allow_commands", "allow_domains"];
 const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 const POLL_MS = 2000;
+const MAX_ROWS = 1000;
 
 const state = {
   rows: new Map(),   /* id -> row */
@@ -205,6 +206,8 @@ const state = {
   selectedCwd: null,
   policyCwd: null,
   confirmRowId: null,
+  confirmAllow: false,
+  confirmDraft: null, /* {kind, value} the user is editing; survives re-renders */
 };
 
 const banner = document.getElementById("banner");
@@ -252,9 +255,9 @@ function decidedByText(row) {
   return row.decided_by || row.source || "";
 }
 
-function rowSourceKey(row) {
-  /* Matches the server filter: source column OR decided_by column. */
-  return row.decided_by || row.source || "";
+/* Same rule as the server's /log filter: source column OR decided_by column. */
+function matchesSource(row, src) {
+  return row.source === src || row.decided_by === src;
 }
 
 function hostnameOf(url) {
@@ -315,9 +318,15 @@ async function pollLog() {
     state.rows.set(r.id, r);
     if (r.id > state.maxId) state.maxId = r.id;
   }
+  if (!rows.length) return;
+  if (state.rows.size > MAX_ROWS) {
+    const oldest = Array.from(state.rows.keys()).sort((a, b) => a - b);
+    for (const id of oldest.slice(0, state.rows.size - MAX_ROWS)) state.rows.delete(id);
+  }
   refreshSessions();
-  renderFeed();
   renderCounters();
+  /* Re-rendering would replace the open rule editor; the feed catches up on close. */
+  if (state.confirmRowId === null) renderFeed();
 }
 
 async function pollScans() {
@@ -368,7 +377,7 @@ function visibleRows() {
   return rows.filter((r) => {
     if (state.selectedSession && r.session_id !== state.selectedSession) return false;
     if (dec && r.decision !== dec) return false;
-    if (src && rowSourceKey(r) !== src) return false;
+    if (src && !matchesSource(r, src)) return false;
     return true;
   });
 }
@@ -423,13 +432,16 @@ function renderCounters() {
     "  escalated " + pct(escalated, rows.length);
 }
 
-function openConfirm(row) {
+function openConfirm(row, allow) {
   state.confirmRowId = row.id;
+  state.confirmAllow = allow;
+  state.confirmDraft = deriveRule(row, allow);
   renderFeed();
 }
 
 function closeConfirm() {
   state.confirmRowId = null;
+  state.confirmDraft = null;
   renderFeed();
 }
 
@@ -439,7 +451,7 @@ function buildConfirmCell(row) {
   const box = document.createElement("div");
   box.className = "confirm";
   const allow = state.confirmAllow;
-  const suggested = deriveRule(row, allow);
+  const suggested = state.confirmDraft || deriveRule(row, allow);
   const title = document.createElement("div");
   title.textContent = (allow ? "Always allow" : "Always deny") + " \u2014 exact rule:";
   box.appendChild(title);
@@ -460,6 +472,11 @@ function buildConfirmCell(row) {
   valInput.setAttribute("aria-label", "Rule value");
   line.appendChild(valInput);
   box.appendChild(line);
+  const keepDraft = () => {
+    state.confirmDraft = { kind: kindSel.value, value: valInput.value };
+  };
+  kindSel.addEventListener("change", keepDraft);
+  valInput.addEventListener("input", keepDraft);
   const btnRow = document.createElement("div");
   btnRow.className = "ruleLine";
   const saveBtn = document.createElement("button");
@@ -542,7 +559,6 @@ function renderFeed() {
       allowBtn.textContent = "Always allow";
       allowBtn.disabled = !uiToken;
       allowBtn.addEventListener("click", () => {
-        state.confirmAllow = true;
         selectRow(row);
         openConfirm(row, true);
       });
@@ -550,7 +566,6 @@ function renderFeed() {
       denyBtn.textContent = "Always deny";
       denyBtn.disabled = !uiToken;
       denyBtn.addEventListener("click", () => {
-        state.confirmAllow = false;
         selectRow(row);
         openConfirm(row, false);
       });
@@ -640,16 +655,17 @@ sessionSel.addEventListener("change", () => {
   renderFeed();
   renderCounters();
 });
-decisionFilter.addEventListener("change", () => {
+function resetFeed() {
   state.maxId = 0;
   state.rows.clear();
+  state.confirmRowId = null;
+  state.confirmDraft = null;
+  renderFeed();
+  renderCounters();
   poll();
-});
-sourceFilter.addEventListener("change", () => {
-  state.maxId = 0;
-  state.rows.clear();
-  poll();
-});
+}
+decisionFilter.addEventListener("change", resetFeed);
+sourceFilter.addEventListener("change", resetFeed);
 
 poll();
 setInterval(poll, POLL_MS);
