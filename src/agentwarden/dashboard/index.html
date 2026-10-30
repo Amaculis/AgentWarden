@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentWarden</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fff;
+    --fg: #1a1a1a;
+    --muted: #5a5a5a;
+    --border: #d8d8d8;
+    --row-alt: #f6f6f6;
+    --allow-bg: #dff0dc;
+    --allow-fg: #1e6b22;
+    --ask-bg: #fbf0cd;
+    --ask-fg: #8a5f00;
+    --deny-bg: #f8dcd9;
+    --deny-fg: #a1231a;
+    --warn-bg: #fff6db;
+    --accent: #0b5cad;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e;
+      --fg: #e0e0e0;
+      --muted: #a8a8a8;
+      --border: #444;
+      --row-alt: #262626;
+      --allow-bg: #1d3a24;
+      --allow-fg: #8fd694;
+      --ask-bg: #4a3a10;
+      --ask-fg: #f2c94c;
+      --deny-bg: #4d211d;
+      --deny-fg: #f1988f;
+      --warn-bg: #3d320f;
+      --accent: #6aa8f0;
+    }
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 13px;
+    margin: 0 auto;
+    max-width: 1100px;
+    min-width: 300px;
+    padding: 12px;
+  }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  h2 { font-size: 14px; margin: 16px 0 6px; }
+  #banner {
+    display: none;
+    background: var(--deny-bg);
+    color: var(--deny-fg);
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+  }
+  #banner.visible { display: block; }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .controls label { color: var(--muted); }
+  select, input[type="text"], button {
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+  button { cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  #tokenHint { color: var(--muted); }
+  #counters { color: var(--muted); margin: 4px 0 0; }
+  .tableWrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td {
+    border-bottom: 1px solid var(--border);
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  tbody tr:nth-child(even) { background: var(--row-alt); }
+  .badge {
+    display: inline-block;
+    border-radius: 10px;
+    padding: 1px 9px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge.allow { background: var(--allow-bg); color: var(--allow-fg); }
+  .badge.ask { background: var(--ask-bg); color: var(--ask-fg); }
+  .badge.deny { background: var(--deny-bg); color: var(--deny-fg); }
+  .action { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .reason { max-width: 320px; }
+  .rowBtns { white-space: nowrap; }
+  .rowBtns button { margin-right: 4px; }
+  tr.selectedRow { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .confirm {
+    background: var(--warn-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    margin: 6px 0;
+  }
+  .confirm .ruleLine { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .confirm input[type="text"] { flex: 1 1 200px; }
+  .saveResult { margin: 4px 0 0; }
+  #scanList { list-style: none; margin: 0; padding: 0; }
+  #scanList li {
+    background: var(--warn-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+  }
+  #policyPanel ul { margin: 2px 0 8px; padding-left: 20px; }
+  #policyPanel .empty { color: var(--muted); }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>AgentWarden</h1>
+<div id="banner" role="alert"></div>
+<div class="controls">
+  <label for="sessionSel">Session</label>
+  <select id="sessionSel"></select>
+  <label for="decisionFilter">Decision</label>
+  <select id="decisionFilter">
+    <option value="">all</option>
+    <option value="allow">allow</option>
+    <option value="ask">ask</option>
+    <option value="deny">deny</option>
+  </select>
+  <label for="sourceFilter">Decided by</label>
+  <select id="sourceFilter">
+    <option value="">all</option>
+    <option value="rules">rules</option>
+    <option value="policy">policy</option>
+    <option value="judge">judge</option>
+    <option value="local">local</option>
+    <option value="spark">spark</option>
+    <option value="failsafe">failsafe</option>
+    <option value="default">default</option>
+  </select>
+  <span id="tokenHint"></span>
+</div>
+<p id="counters"></p>
+
+<h2>Scanner warnings</h2>
+<ul id="scanList"></ul>
+<p id="scanEmpty" class="muted">No flagged content.</p>
+
+<h2>Decision feed</h2>
+<div class="tableWrap">
+<table aria-label="Decision feed">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Tool</th>
+      <th>Action</th>
+      <th>Decision</th>
+      <th>Decided by</th>
+      <th>Risk</th>
+      <th>Reason</th>
+      <th>Rules</th>
+    </tr>
+  </thead>
+  <tbody id="feedBody"></tbody>
+</table>
+</div>
+<p id="feedEmpty" class="muted">No decisions yet.</p>
+
+<h2>Policy</h2>
+<div id="policyPanel"><p class="muted">Select a feed row to see its project policy.</p></div>
+
+<script>
+"use strict";
+/* Token: read once from location.hash, keep in memory, drop the hash. */
+let uiToken = "";
+(function initToken() {
+  const m = /#token=([^&]+)/.exec(location.hash || "");
+  if (m) { uiToken = decodeURIComponent(m[1]); }
+  history.replaceState(null, "", location.pathname + location.search);
+})();
+
+const RULE_KINDS = ["deny_paths", "ask_paths", "allow_paths", "deny_commands",
+  "ask_commands", "allow_commands", "allow_domains"];
+const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
+const POLL_MS = 2000;
+
+const state = {
+  rows: new Map(),   /* id -> row */
+  maxId: 0,
+  sessions: [],      /* newest first */
+  selectedSession: null,
+  selectedCwd: null,
+  policyCwd: null,
+  confirmRowId: null,
+};
+
+const banner = document.getElementById("banner");
+const tokenHint = document.getElementById("tokenHint");
+const sessionSel = document.getElementById("sessionSel");
+const decisionFilter = document.getElementById("decisionFilter");
+const sourceFilter = document.getElementById("sourceFilter");
+const counters = document.getElementById("counters");
+const feedBody = document.getElementById("feedBody");
+const feedEmpty = document.getElementById("feedEmpty");
+const scanList = document.getElementById("scanList");
+const scanEmpty = document.getElementById("scanEmpty");
+const policyPanel = document.getElementById("policyPanel");
+
+if (!uiToken) {
+  tokenHint.textContent =
+    "Rule buttons disabled: open the dashboard URL printed in the daemon console.";
+}
+
+function showBanner(msg) {
+  banner.textContent = msg;
+  banner.classList.toggle("visible", !!msg);
+}
+
+function shortAction(row) {
+  const ti = (row && row.tool_input) || {};
+  let s = "";
+  if (typeof ti.command === "string" && ti.command) s = ti.command;
+  else if (typeof ti.file_path === "string" && ti.file_path) s = ti.file_path;
+  else if (typeof ti.url === "string" && ti.url) s = ti.url;
+  else if (typeof ti.pattern === "string" && ti.pattern) s = ti.pattern;
+  else {
+    for (const v of Object.values(ti)) {
+      if (typeof v === "string" && v) { s = v; break; }
+    }
+    if (!s) {
+      try { s = JSON.stringify(ti); } catch (e) { s = String(ti); }
+    }
+  }
+  return s;
+}
+
+function decidedByText(row) {
+  if (row.escalated === 1 || row.escalated === true) return "escalated \u2192 spark";
+  return row.decided_by || row.source || "";
+}
+
+function rowSourceKey(row) {
+  /* Matches the server filter: source column OR decided_by column. */
+  return row.decided_by || row.source || "";
+}
+
+function hostnameOf(url) {
+  try { return new URL(url).hostname; }
+  catch (e) { return url; }
+}
+
+/* Exact rule suggestion for the inline confirm. Shell tools -> commands,
+   file tools -> paths, URLs -> domains, patterns -> paths. */
+function deriveRule(row, allow) {
+  const ti = (row && row.tool_input) || {};
+  if (SHELL_TOOLS.has(row.tool_name) || typeof ti.command === "string") {
+    const cmd = typeof ti.command === "string" && ti.command ? ti.command : row.tool_name;
+    return { kind: allow ? "allow_commands" : "deny_commands", value: cmd };
+  }
+  if (typeof ti.file_path === "string" && ti.file_path) {
+    return { kind: allow ? "allow_paths" : "deny_paths", value: ti.file_path };
+  }
+  if (typeof ti.url === "string" && ti.url) {
+    if (allow) return { kind: "allow_domains", value: hostnameOf(ti.url) };
+    return { kind: "deny_paths", value: ti.url };
+  }
+  if (typeof ti.pattern === "string" && ti.pattern) {
+    return { kind: allow ? "allow_paths" : "deny_paths", value: ti.pattern };
+  }
+  for (const v of Object.values(ti)) {
+    if (typeof v === "string" && v && v.indexOf("\n") === -1 && v.length <= 200) {
+      return { kind: allow ? "allow_paths" : "deny_paths", value: v };
+    }
+  }
+  return { kind: allow ? "allow_commands" : "deny_commands", value: row.tool_name };
+}
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? (iso || "") : d.toLocaleTimeString();
+}
+
+function fmtRisk(risk) {
+  if (risk === null || risk === undefined || risk === "") return "";
+  const n = Number(risk);
+  return isNaN(n) ? "" : Math.round(n * 100) + "%";
+}
+
+async function pollLog() {
+  const params = new URLSearchParams({ limit: "100" });
+  if (state.maxId > 0) params.set("since_id", String(state.maxId));
+  const dec = decisionFilter.value;
+  const src = sourceFilter.value;
+  if (dec) params.set("decision", dec);
+  if (src) params.set("source", src);
+  const res = await fetch("/log?" + params.toString());
+  if (!res.ok) throw new Error("GET /log -> " + res.status);
+  const rows = await res.json();
+  /* Server returns newest first; track the max id and store all. */
+  const ordered = rows.slice().reverse(); /* oldest first for insertion */
+  for (const r of ordered) {
+    state.rows.set(r.id, r);
+    if (r.id > state.maxId) state.maxId = r.id;
+  }
+  refreshSessions();
+  renderFeed();
+  renderCounters();
+}
+
+async function pollScans() {
+  const res = await fetch("/scans?limit=50");
+  if (!res.ok) throw new Error("GET /scans -> " + res.status);
+  const rows = await res.json();
+  renderScans(rows.filter((r) => r.flagged === 1 || r.flagged === true));
+}
+
+async function poll() {
+  try {
+    await pollLog();
+    await pollScans();
+    showBanner("");
+  } catch (e) {
+    showBanner("AgentWarden daemon not reachable");
+  }
+}
+
+function refreshSessions() {
+  const seen = [];
+  const known = new Set();
+  const ids = Array.from(state.rows.keys()).sort((a, b) => b - a); /* newest first */
+  for (const id of ids) {
+    const sid = state.rows.get(id).session_id;
+    if (sid && !known.has(sid)) { known.add(sid); seen.push(sid); }
+  }
+  state.sessions = seen;
+  if (!state.selectedSession || !known.has(state.selectedSession)) {
+    state.selectedSession = seen.length ? seen[0] : null;
+  }
+  const current = sessionSel.value;
+  while (sessionSel.firstChild) sessionSel.removeChild(sessionSel.firstChild);
+  for (const sid of seen) {
+    const opt = document.createElement("option");
+    opt.value = sid;
+    opt.textContent = sid;
+    sessionSel.appendChild(opt);
+  }
+  if (state.selectedSession) sessionSel.value = state.selectedSession;
+  else if (current) sessionSel.value = current;
+}
+
+function visibleRows() {
+  const dec = decisionFilter.value;
+  const src = sourceFilter.value;
+  const rows = Array.from(state.rows.values()).sort((a, b) => b.id - a.id);
+  return rows.filter((r) => {
+    if (state.selectedSession && r.session_id !== state.selectedSession) return false;
+    if (dec && r.decision !== dec) return false;
+    if (src && rowSourceKey(r) !== src) return false;
+    return true;
+  });
+}
+
+function renderScans(flagged) {
+  while (scanList.firstChild) scanList.removeChild(scanList.firstChild);
+  scanEmpty.style.display = flagged.length ? "none" : "";
+  for (const s of flagged) {
+    const li = document.createElement("li");
+    const head = document.createElement("strong");
+    head.textContent = "Injection warning: " + (s.tool_name || "") + " " + (s.source || "");
+    li.appendChild(head);
+    const meta = document.createElement("div");
+    meta.className = "muted";
+    let m = fmtTime(s.created_at) + "  session " + (s.session_id || "");
+    if (s.confidence !== null && s.confidence !== undefined) {
+      m += "  confidence " + Math.round(Number(s.confidence) * 100) + "%";
+    }
+    if (s.error) m += "  error: " + s.error;
+    meta.textContent = m;
+    li.appendChild(meta);
+    scanList.appendChild(li);
+  }
+}
+
+function makeBadge(decision) {
+  const span = document.createElement("span");
+  span.className = "badge " + (decision === "allow" || decision === "ask" ||
+    decision === "deny" ? decision : "");
+  span.textContent = decision || "";
+  return span;
+}
+
+function renderCounters() {
+  const sid = state.selectedSession;
+  const rows = Array.from(state.rows.values()).filter((r) => !sid || r.session_id === sid);
+  let allowed = 0, asked = 0, denied = 0, local = 0, judged = 0, escalated = 0;
+  for (const r of rows) {
+    if (r.decision === "allow") allowed++;
+    else if (r.decision === "ask") asked++;
+    else if (r.decision === "deny") denied++;
+    if (r.decided_by === "local" || r.decided_by === "spark") {
+      judged++;
+      if (r.decided_by === "local") local++;
+    }
+    if (r.escalated === 1 || r.escalated === true) escalated++;
+  }
+  const pct = (n, d) => (d ? Math.round((n / d) * 100) + "%" : "\u2014");
+  counters.textContent = "actions " + rows.length + "  allowed " + allowed +
+    "  asked " + asked + "  denied " + denied +
+    "  decided locally " + pct(local, judged) +
+    "  escalated " + pct(escalated, rows.length);
+}
+
+function openConfirm(row) {
+  state.confirmRowId = row.id;
+  renderFeed();
+}
+
+function closeConfirm() {
+  state.confirmRowId = null;
+  renderFeed();
+}
+
+function buildConfirmCell(row) {
+  const td = document.createElement("td");
+  td.colSpan = 8;
+  const box = document.createElement("div");
+  box.className = "confirm";
+  const allow = state.confirmAllow;
+  const suggested = deriveRule(row, allow);
+  const title = document.createElement("div");
+  title.textContent = (allow ? "Always allow" : "Always deny") + " \u2014 exact rule:";
+  box.appendChild(title);
+  const line = document.createElement("div");
+  line.className = "ruleLine";
+  const kindSel = document.createElement("select");
+  for (const k of RULE_KINDS) {
+    const opt = document.createElement("option");
+    opt.value = k;
+    opt.textContent = k;
+    if (k === suggested.kind) opt.selected = true;
+    kindSel.appendChild(opt);
+  }
+  line.appendChild(kindSel);
+  const valInput = document.createElement("input");
+  valInput.type = "text";
+  valInput.value = suggested.value;
+  valInput.setAttribute("aria-label", "Rule value");
+  line.appendChild(valInput);
+  box.appendChild(line);
+  const btnRow = document.createElement("div");
+  btnRow.className = "ruleLine";
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Save rule";
+  saveBtn.disabled = !uiToken;
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+  box.appendChild(btnRow);
+  const result = document.createElement("p");
+  result.className = "saveResult muted";
+  box.appendChild(result);
+  cancelBtn.addEventListener("click", closeConfirm);
+  saveBtn.addEventListener("click", async () => {
+    result.textContent = "Saving\u2026";
+    try {
+      const res = await fetch("/policy/rules", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Warden-Token": uiToken,
+        },
+        body: JSON.stringify({ cwd: row.cwd, kind: kindSel.value, value: valInput.value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        result.textContent = "Error: " + (body.detail || ("HTTP " + res.status));
+        return;
+      }
+      result.textContent = body.added
+        ? "Rule saved to " + (body.path || "policy file") + "."
+        : "Rule already present in " + (body.path || "policy file") + ".";
+      if (state.selectedCwd) loadPolicy(state.selectedCwd);
+    } catch (e) {
+      result.textContent = "Error: daemon not reachable";
+    }
+  });
+  td.appendChild(box);
+  return td;
+}
+
+function renderFeed() {
+  while (feedBody.firstChild) feedBody.removeChild(feedBody.firstChild);
+  const rows = visibleRows();
+  feedEmpty.style.display = rows.length ? "none" : "";
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    if (row.cwd && row.cwd === state.selectedCwd) tr.className = "selectedRow";
+    const timeTd = document.createElement("td");
+    timeTd.textContent = fmtTime(row.created_at);
+    tr.appendChild(timeTd);
+    const toolTd = document.createElement("td");
+    toolTd.textContent = row.tool_name || "";
+    tr.appendChild(toolTd);
+    const actionTd = document.createElement("td");
+    actionTd.className = "action";
+    const full = shortAction(row);
+    actionTd.textContent = full.length > 80 ? full.slice(0, 80) + "\u2026" : full;
+    actionTd.title = full;
+    tr.appendChild(actionTd);
+    const decTd = document.createElement("td");
+    decTd.appendChild(makeBadge(row.decision));
+    tr.appendChild(decTd);
+    const byTd = document.createElement("td");
+    byTd.textContent = decidedByText(row);
+    tr.appendChild(byTd);
+    const riskTd = document.createElement("td");
+    riskTd.textContent = fmtRisk(row.risk);
+    tr.appendChild(riskTd);
+    const reasonTd = document.createElement("td");
+    reasonTd.className = "reason";
+    reasonTd.textContent = row.reason || "";
+    reasonTd.title = row.reason || "";
+    tr.appendChild(reasonTd);
+    const btnTd = document.createElement("td");
+    btnTd.className = "rowBtns";
+    if (row.decision === "deny" || row.decision === "ask") {
+      const allowBtn = document.createElement("button");
+      allowBtn.textContent = "Always allow";
+      allowBtn.disabled = !uiToken;
+      allowBtn.addEventListener("click", () => {
+        state.confirmAllow = true;
+        selectRow(row);
+        openConfirm(row, true);
+      });
+      const denyBtn = document.createElement("button");
+      denyBtn.textContent = "Always deny";
+      denyBtn.disabled = !uiToken;
+      denyBtn.addEventListener("click", () => {
+        state.confirmAllow = false;
+        selectRow(row);
+        openConfirm(row, false);
+      });
+      btnTd.appendChild(allowBtn);
+      btnTd.appendChild(denyBtn);
+    }
+    tr.appendChild(btnTd);
+    tr.addEventListener("click", (ev) => {
+      if (ev.target && ev.target.tagName === "BUTTON") return;
+      if (ev.target && (ev.target.tagName === "SELECT" || ev.target.tagName === "INPUT")) return;
+      selectRow(row);
+    });
+    feedBody.appendChild(tr);
+    if (state.confirmRowId === row.id) {
+      const confirmTr = document.createElement("tr");
+      confirmTr.appendChild(buildConfirmCell(row));
+      feedBody.appendChild(confirmTr);
+    }
+  }
+}
+
+function selectRow(row) {
+  if (row.cwd && row.cwd !== state.selectedCwd) {
+    state.selectedCwd = row.cwd;
+    loadPolicy(row.cwd);
+  } else if (!row.cwd) {
+    state.selectedCwd = null;
+  }
+  renderFeed();
+}
+
+async function loadPolicy(cwd) {
+  state.policyCwd = cwd;
+  while (policyPanel.firstChild) policyPanel.removeChild(policyPanel.firstChild);
+  const head = document.createElement("p");
+  head.className = "muted";
+  head.textContent = "Loading policy for " + cwd + "\u2026";
+  policyPanel.appendChild(head);
+  try {
+    const res = await fetch("/policy?cwd=" + encodeURIComponent(cwd));
+    const body = await res.json().catch(() => ({}));
+    if (cwd !== state.policyCwd) return; /* a newer request started */
+    while (policyPanel.firstChild) policyPanel.removeChild(policyPanel.firstChild);
+    if (!res.ok) {
+      const err = document.createElement("p");
+      err.textContent = "Policy error: " + (body.detail || ("HTTP " + res.status));
+      policyPanel.appendChild(err);
+      return;
+    }
+    const pathP = document.createElement("p");
+    pathP.className = "muted";
+    pathP.textContent = (body.exists ? "" : "(not created yet) ") + (body.path || "");
+    policyPanel.appendChild(pathP);
+    const policy = body.policy || {};
+    for (const kind of RULE_KINDS) {
+      const h = document.createElement("h3");
+      h.style.fontSize = "13px";
+      h.textContent = kind;
+      policyPanel.appendChild(h);
+      const vals = policy[kind];
+      if (!vals || !vals.length) {
+        const em = document.createElement("p");
+        em.className = "empty";
+        em.textContent = "\u2014";
+        policyPanel.appendChild(em);
+      } else {
+        const ul = document.createElement("ul");
+        for (const v of vals) {
+          const li = document.createElement("li");
+          li.textContent = v;
+          ul.appendChild(li);
+        }
+        policyPanel.appendChild(ul);
+      }
+    }
+  } catch (e) {
+    if (cwd !== state.policyCwd) return;
+    while (policyPanel.firstChild) policyPanel.removeChild(policyPanel.firstChild);
+    const err = document.createElement("p");
+    err.textContent = "AgentWarden daemon not reachable";
+    policyPanel.appendChild(err);
+  }
+}
+
+sessionSel.addEventListener("change", () => {
+  state.selectedSession = sessionSel.value || null;
+  renderFeed();
+  renderCounters();
+});
+decisionFilter.addEventListener("change", () => {
+  state.maxId = 0;
+  state.rows.clear();
+  poll();
+});
+sourceFilter.addEventListener("change", () => {
+  state.maxId = 0;
+  state.rows.clear();
+  poll();
+});
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
