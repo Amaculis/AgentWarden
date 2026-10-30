@@ -104,6 +104,8 @@ def classify(label: str, decision: str) -> str | None:
 def load_examples() -> list[dict]:
     for pattern in ("cases", "candidates"):
         files = sorted(glob.glob(str(REPO_ROOT / "eval" / pattern / "*.jsonl")))
+        # The holdout set is never shown to anything that shapes cases or tuning.
+        files = [f for f in files if Path(f).name != evalrun.HOLDOUT_NAME]
         rows: list[dict] = []
         for path in files:
             for line in Path(path).read_text(encoding="utf-8").splitlines():

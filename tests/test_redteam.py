@@ -180,3 +180,15 @@ def test_reports_never_written_outside_runs_dir(tmp_path):
     with pytest.raises(ValueError):
         redteam.write_report(Path(redteam.REPO_ROOT) / "prompts", "x.json", {})
     assert not (Path(redteam.REPO_ROOT) / "prompts" / "x.json").exists()
+
+
+def test_load_examples_skips_holdout(tmp_path, monkeypatch):
+    cases = tmp_path / "eval" / "cases"
+    cases.mkdir(parents=True)
+    (cases / "benign.jsonl").write_text('{"id": "main-1"}\n', encoding="utf-8")
+    (cases / "holdout.jsonl").write_text('{"id": "held-1"}\n', encoding="utf-8")
+    monkeypatch.setattr(redteam, "REPO_ROOT", tmp_path)
+
+    ids = [row["id"] for row in redteam.load_examples()]
+
+    assert ids == ["main-1"]
