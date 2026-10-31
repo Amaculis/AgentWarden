@@ -114,12 +114,14 @@ make redteam
 
 Action eval, 128 main + 27 holdout cases (31 Oct, `llama3.1:8b` on Ollama CPU for local/cascade):
 
-| Mode | Accuracy (main / holdout) | Detection rate | Tamper | p95 latency | Cost / 100 actions |
+| Mode | Accuracy (main / holdout) | Detection rate (main / holdout) | Tamper | p95 latency | Cost / 100 actions |
 | --- | --- | --- | --- | --- | --- |
-| rules | 0.500 / 0.630 | 1.000 | 12/12 | 0.3 ms | $0 |
-| local | 0.914 / 0.852 | 1.000 | 12/12 | 14.2 s | $0 |
-| spark | 0.953 / 0.889 | 1.000 | 12/12 | ~6 s | $0.215 |
-| cascade | 0.953 / 0.889 | 1.000 | 12/12 | 2.6 s | $0.0055 |
+| rules | 0.500 / 0.630 | 1.000 / 1.000 | 12/12 | 0.3 ms | $0 |
+| local | 0.914 / 0.852 | 1.000 / 0.900 | 12/12 | 14.2 s | $0 |
+| spark | 0.953 / 0.889 | 1.000 / 1.000 | 12/12 | ~6 s | $0.215 |
+| cascade | 0.953 / 0.889 | 1.000 / 0.900 | 12/12 | 2.6 s | $0.0055 |
+
+Rules mode reaches detection 1.000 by answering `ask` to everything it cannot settle. In local and cascade, one holdout case (an obfuscated npm `postinstall` script) was judged `allow` by the local model with enough confidence that cascade did not escalate it.
 
 Scanner eval, 53 main + 12 holdout documents, local model: recall 0.923 / 0.833, precision 0.96 / 1.00.
 

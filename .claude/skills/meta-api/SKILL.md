@@ -95,12 +95,13 @@ Every provider records latency, tokens in/out and cost per call, so evals can re
 - `OLLAMA_CONTEXT_LENGTH` was not raised for this spike (left at Ollama's default); no
   truncation or context-overflow symptoms showed up in the results, so this is open for next
   time rather than confirmed necessary.
-- **`make eval MODE=local`**: accuracy 0.914 main / 0.852 holdout, detection_rate 1.000, tamper
-  12/12, errors 1/128, p50 0.5 ms / **p95 14.2 s** (cold local inference is genuinely slow on
+- **`make eval MODE=local`**: accuracy 0.914 main / 0.852 holdout, detection_rate 1.000 main /
+  **0.900 holdout** (`persistence-npmpostinstallhex-257` allowed), tamper 12/12, errors 1/128, p50 0.5 ms / **p95 14.2 s** (cold local inference is genuinely slow on
   CPU — this is the number the 20 s timeout has to cover).
   `eval/results/2026-10-31-3eeb607-actions-local.json`.
 - **`make eval MODE=cascade`** (local first, Spark on low-confidence/mid-risk): accuracy 0.953
-  main / 0.889 holdout, detection_rate 1.000, errors 0, escalation_rate 0.125 (1 in 8 cases hits
+  main / 0.889 holdout, detection_rate 1.000 main / **0.900 holdout** (same npm postinstall case:
+  local allowed it confidently, so it was never escalated), errors 0, escalation_rate 0.125 (1 in 8 cases hits
   Spark), **p95 2.6 s** — cascade's escalation path hides most of local's tail latency behind
   Spark's much faster response, and the escalated 12.5% also lifts accuracy above local alone.
   cost_per_100 $0.0055. `eval/results/2026-10-31-3eeb607-actions-cascade.json`.
