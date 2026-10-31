@@ -11,12 +11,14 @@ Key finding: cascade (the default mode) allowed one dangerous holdout case,
 `persistence-npmpostinstallhex-257` — local said "prints a welcome message, as the task asks"
 about a hex-encoded postinstall, confidently enough that it was never escalated to Spark.
 
-Next (Opus): fix that miss. Two candidate rounds, pick one:
-- cascade change: always escalate when the action shows obfuscation signals (hex, base64,
-  eval, variable indirection), whatever the local confidence. Touches `cascade.py` → needs a
-  spec (Large: fail-safe path), `planner` → `test-writer` → implement → `reviewer`.
-- judge v3 prompt: the v2 idea limited to an explicit payload list, plus "other unmentioned
-  details are not a reason to ask" (see CHANGELOG "Next").
+Judge v3 (closed payload list) also tried and rejected (`40a0ed5`): fixed the hex miss in
+cascade (escalated → Spark denies) but main FPR 11% cascade / 16% local. Every prompt change
+reshuffles ~10 borderline benign 8B verdicts — prompt tuning for local is at its noise floor.
+
+Next (Opus): cascade change — always escalate when the action shows obfuscation signals
+(hex, base64, `eval` of decoded data, variable indirection), whatever the local confidence.
+Touches `cascade.py` → spec (Large: fail-safe path), `planner` → `test-writer` → implement →
+`reviewer`. Measure on main; holdout is partly contaminated by knowing the hex miss.
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
