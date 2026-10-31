@@ -81,7 +81,36 @@ Every provider records latency, tokens in/out and cost per call, so evals can re
 - Same OpenAI-compatible client, `base_url=WARDEN_LOCAL_BASE`, model `WARDEN_LOCAL_MODEL`, no API key or a dummy one.
 - Small models follow JSON instructions less reliably: always validate, and count parse failures in eval as their own metric.
 - Keep the local prompt short; put examples last. Measure latency with the real prompt, not a toy one.
-- Model id, hardware, p50/p95 and JSON reliability go here after the spike (VERIFY).
+
+### Local-model spike (31 Oct) — **VERIFIED**
+
+- Model: `llama3.1:8b` via Ollama on the user's machine (CPU, no GPU). `llama3.2:3b` was the
+  original plan but was never pulled; only 8B was available, so the spike ran on that.
+- Ollama defaults (`WARDEN_LOCAL_TIMEOUT=3`, `WARDEN_JUDGE_TIMEOUT=6`, `WARDEN_SCAN_TIMEOUT=7`)
+  are far too short for an 8B model on CPU: first run at defaults had 64/128 cases (50%) fail as
+  `judge unavailable (timeout)`, dragging accuracy down to 0.500 — not a model-quality problem,
+  a timeout-budget problem.
+- Raised to `WARDEN_LOCAL_TIMEOUT=20`, `WARDEN_JUDGE_TIMEOUT=25`, `WARDEN_DECISION_BUDGET=26`,
+  `WARDEN_SCAN_TIMEOUT=20` and reran — errors dropped to 1/128 (judge) and 0/53 (scanner).
+- `OLLAMA_CONTEXT_LENGTH` was not raised for this spike (left at Ollama's default); no
+  truncation or context-overflow symptoms showed up in the results, so this is open for next
+  time rather than confirmed necessary.
+- **`make eval MODE=local`**: accuracy 0.914 main / 0.852 holdout, detection_rate 1.000, tamper
+  12/12, errors 1/128, p50 0.5 ms / **p95 14.2 s** (cold local inference is genuinely slow on
+  CPU — this is the number the 20 s timeout has to cover).
+  `eval/results/2026-10-31-3eeb607-actions-local.json`.
+- **`make eval MODE=cascade`** (local first, Spark on low-confidence/mid-risk): accuracy 0.953
+  main / 0.889 holdout, detection_rate 1.000, errors 0, escalation_rate 0.125 (1 in 8 cases hits
+  Spark), **p95 2.6 s** — cascade's escalation path hides most of local's tail latency behind
+  Spark's much faster response, and the escalated 12.5% also lifts accuracy above local alone.
+  cost_per_100 $0.0055. `eval/results/2026-10-31-3eeb607-actions-cascade.json`.
+- **`make eval-scan` (local)**: recall 0.923 main / 0.833 holdout, precision 0.96 / 1.00, fpr
+  0.037 / 0.0, errors 0, parse_failures 0, p50 1.4 s / p95 2.7 s.
+  `eval/results/2026-10-31-3eeb607-content-scan.json`.
+- Takeaway: an 8B CPU model is usable as the cascade's first pass (cheap, catches the easy
+  majority) but is too slow and too inaccurate to run alone — the timeout budget must assume
+  multi-second latency, and cascade's accuracy gain over local-only justifies keeping
+  `WARDEN_JUDGE=cascade` as the default rather than `local`.
 
 ## First request checklist (28 Oct)
 

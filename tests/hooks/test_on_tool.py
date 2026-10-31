@@ -616,11 +616,11 @@ class TestHookTimeoutClamp:
         monkeypatch.delenv("WARDEN_HOOK_TIMEOUT", raising=False)
         assert on_tool.hook_timeout_seconds() == 8.0
 
-    def test_too_large_is_clamped_to_10(self, monkeypatch):
+    def test_too_large_is_clamped_to_25(self, monkeypatch):
         from hooks import on_tool
 
         monkeypatch.setenv("WARDEN_HOOK_TIMEOUT", "99")
-        assert on_tool.hook_timeout_seconds() == 10.0
+        assert on_tool.hook_timeout_seconds() == 25.0
 
     def test_within_range_passes_through(self, monkeypatch):
         from hooks import on_tool

@@ -12,7 +12,7 @@ import json
 import os
 import sys
 
-SCAN_DEADLINE_S = 8.0
+SCAN_DEADLINE_S = 21.0
 MAX_WARNING = 400
 
 

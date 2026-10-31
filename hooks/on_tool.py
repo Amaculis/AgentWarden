@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 DEFAULT_URL = "http://127.0.0.1:8765"
 DEFAULT_TIMEOUT_S = 8.0
-MAX_TIMEOUT_S = 10.0
+MAX_TIMEOUT_S = 25.0
 MAX_BODY_BYTES = 64 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 DECISIONS = {"allow", "deny", "ask"}
