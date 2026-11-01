@@ -48,10 +48,24 @@ Done 2026-11-01 (Opus):
   check before moving any candidate to eval/cases/. eval/results/*-b5847bc-actions-cascade.json
   holds the last candidate run, not the main run (the file name is commit+mode only).
 
+Done 2026-11-01 (Opus): spec 027 (`e395992`, agent adapter layer, `agents/`): hooks take
+`--agent <name>` → `X-AgentWarden-Agent` header → daemon normalizes the foreign payload into the
+Claude Code shape (`tool_map`/`input_map`); unmapped foreign tool → `<agent>:<tool>` → rules
+`ask`, no model; every registered agent's `config_paths` hard-denied for writes/shell (parent
+dir only as a whole dir or wildcard, so `.github/workflows` stays usable), links and hard links
+included; optional `hooks/formats/<agent>.py` output formatter, any failure → Claude-schema
+fail-safe. Found on the way: before 027 a foreign shell tool name skipped every hard deny.
+Reviewer: no findings. 905 tests, eval-rules +0.000.
+
+In progress: specs 028 (Muse Code), 029 (Copilot), 030 (Codex) — three Sonnet agents in their
+own worktrees on branches `028-muse-code`, `029-copilot`, `030-codex` (from `023a161`), commit
+there, no push; the human merges. Only Muse Code can be checked live (tight budget: one short
+hook-logger session). 030 needs an Opus reviewer before merge (it formats hook output).
+
 Next (Opus): backlog draft `docs/specs/backlog/input-injection-screen-capture.md` (Large:
 SendKeys/xdotool/user32 input injection = new hard deny, since it can approve AgentWarden's own
-prompts; screen/clipboard capture = default `ask`, `deny` with upload; give it the next free
-number, 027, when starting).
+prompts; screen/clipboard capture = default `ask`, `deny` with upload); number 031 (027–030 are
+taken).
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
