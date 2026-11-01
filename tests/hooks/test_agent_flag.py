@@ -178,6 +178,20 @@ def test_on_read_forwards_header(tmp_path, stub_daemon):
     assert _header(stub_daemon) == "muse_code"
 
 
+def test_on_read_forwards_payload_without_event_name(tmp_path, stub_daemon):
+    stub_daemon.body = json.dumps({"warning": None}).encode()
+    payload = {k: v for k, v in POST_READ.items() if k != "hook_event_name"}
+    run_hook(ON_READ, json.dumps(payload), tmp_path, env={"WARDEN_URL": stub_daemon.url})
+    assert stub_daemon.last_request is not None
+    assert stub_daemon.last_request.path == "/scan"
+
+
+def test_on_read_other_event_name_is_not_scanned(tmp_path, stub_daemon):
+    payload = {**POST_READ, "hook_event_name": "PreToolUse"}
+    run_hook(ON_READ, json.dumps(payload), tmp_path, env={"WARDEN_URL": stub_daemon.url})
+    assert stub_daemon.request_count == 0
+
+
 def test_on_read_malformed_agent_prints_nothing_and_no_call(tmp_path, stub_daemon):
     result = run_hook(
         ON_READ, json.dumps(POST_READ), tmp_path, env={"WARDEN_URL": stub_daemon.url}, args=["x"]

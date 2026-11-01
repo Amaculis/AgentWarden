@@ -54,7 +54,8 @@ def run(stdin_bytes: bytes, agent: str | None = "claude_code") -> str | None:
         event = json.loads(stdin_bytes.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         return None
-    if not isinstance(event, dict) or event.get("hook_event_name") != "PostToolUse":
+    # Some agents send no event name (Copilot CLI); the daemon's adapter supplies it (spec 027).
+    if not isinstance(event, dict) or event.get("hook_event_name", "PostToolUse") != "PostToolUse":
         return None
     url = on_tool.decide_url()
     if url is None:
