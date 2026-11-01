@@ -34,7 +34,7 @@ not exist, remote dev container, daemon on another machine), behaviour is exactl
 
 1. **Which paths.** The same path fields the rules already read: file tools' `file_path` /
    `notebook_path`, `Grep`/`Glob` `path` and the literal base of a pattern, and Bash/PowerShell
-   path tokens (`command_path_tokens`). At most 32 paths per action; more → `ask` ("too many
+   path tokens (`command_path_tokens`). At most 64 paths per action; more → `ask` ("too many
    paths to check").
 2. **Which ones are resolved.** Only paths that are lexically **inside the roots** (project,
    `extra_roots`, session grants). A path lexically outside is already `deny`/`ask`; resolving it
@@ -52,9 +52,9 @@ not exist, remote dev container, daemon on another machine), behaviour is exactl
 4. **What is checked on the resolved path**, when `changed`:
    - secret path (`_is_secret_path`) → `deny`, reason names both: "`docs/notes` is a link to
      `~/.aws/credentials`, a secret file";
-   - self-protection (`.agentwarden/`, `.claude/settings*.json`, project `hooks/`) for writing
-     tools and shell → `deny`, same as the lexical rule; for `Read` the existing rule applies
-     unchanged (whatever it decides lexically for that target);
+   - self-protection → `deny` exactly where the lexical rule denies the target: `.agentwarden/`
+     and project `hooks/` for every tool (including `Read`), `.claude/settings*.json` for
+     writing tools and shell (a lexical `Read` of settings is allowed, so it is through a link);
    - `left_roots` → the boundary verdict for the target, as if the action named it (search/listing
      → `deny`, otherwise `ask` with `consult_judge` and `grant_dir` = the target's directory).
 5. **Hard links.** For an existing regular file inside the roots with `st_nlink > 1` that the
@@ -77,7 +77,7 @@ not exist, remote dev container, daemon on another machine), behaviour is exactl
    `New-Item -ItemType SymbolicLink -Target ~/.aws/credentials`, `mklink /J lnk C:\Users` are
    `deny` (secret mention) or `ask` (boundary). A link to a target inside the project stays as
    today.
-9. **Budget.** Resolution of one action takes < 20 ms on a local disk for 32 paths × 10
+9. **Budget.** Resolution of one action takes < 20 ms on a local disk for 64 paths × 10
    components; the walk has its own deadline of 200 ms → past it, `ask`.
 
 `WARDEN_RESOLVE_LINKS=0` disables steps 2–6 (for remote setups where the daemon's filesystem
@@ -101,7 +101,7 @@ is not the agent's). Default on. A disabled check is logged once at startup.
 
 - Path exists, walk fails (loop, hop limit, permission, OSError) → `ask`.
 - Walk deadline exceeded → `ask`.
-- More than 32 paths → `ask`.
+- More than 64 paths → `ask`.
 - UNC path or link target → no filesystem access; lexical boundary verdict (outside → `ask`/`deny`).
 - `protected_inodes` fails (no home dir, permission) → empty set plus one warning; symlink checks
   still run. (Stricter alternative rejected: every pnpm read would become `ask`.)
@@ -116,30 +116,38 @@ Tests create real links in `tmp_path`; symlink tests are skipped where the OS re
 the volume has no short names. At least the junction and symlink-to-dir cases must run in CI on
 the dev machine.
 
-- [ ] `test_symlink_to_secret_file_denied` — `notes -> <home>/.aws/credentials`, `Read notes` → deny.
-- [ ] `test_symlinked_dir_to_ssh_denied` — `docs -> <home>/.ssh`, `Read docs/id_ed25519` and
+- [x] `test_symlink_to_secret_file_denied` — `notes -> <home>/.aws/credentials`, `Read notes` → deny.
+- [x] `test_symlinked_dir_to_ssh_denied` — `docs -> <home>/.ssh`, `Read docs/id_ed25519` and
       `Bash: cat docs/id_ed25519` → deny.
-- [ ] `test_link_to_agentwarden_edit_denied` — `cfg -> .agentwarden`, `Edit cfg/policy.yaml`,
+- [x] `test_link_to_agentwarden_edit_denied` — `cfg -> .agentwarden`, `Edit cfg/policy.yaml`,
       `Write cfg/x`, `Bash: echo x > cfg/policy.yaml` → deny.
-- [ ] `test_junction_outside_project_ask` (Windows) — `lnk` junction to a sibling dir,
+- [x] `test_junction_outside_project_ask` (Windows) — `lnk` junction to a sibling dir,
       `Read lnk/x.py` → ask with `grant_dir` = the sibling dir; `Grep path=lnk` → deny.
-- [ ] `test_link_inside_project_unchanged` — `src/current -> src/v2`, `Read src/current/a.py` → allow.
-- [ ] `test_short_name_to_agentwarden_denied` (Windows, 8.3 volume) — `Edit AGENTW~1/policy.yaml` → deny.
-- [ ] `test_hardlink_to_secret_denied` — hard link inside the project to a fake `<home>/.ssh/id_rsa`
+- [x] `test_link_inside_project_unchanged` — `src/current -> src/v2`, `Read src/current/a.py` → allow.
+- [x] `test_short_name_to_agentwarden_denied` (Windows, 8.3 volume) — `Edit AGENTW~1/policy.yaml` → deny.
+      A fully shortened absolute path (root too, `PYTEST~1/...`) is lexically outside → boundary `ask`.
+- [x] `test_hardlink_to_secret_denied` — hard link inside the project to a fake `<home>/.ssh/id_rsa`
       (home redirected via `HOME`/`USERPROFILE` in the test) → deny.
-- [ ] `test_hardlink_unrelated_allowed` — two hard links to an ordinary file, `Read` → allow.
-- [ ] `test_resolution_never_loosens` — property-style: for every existing `test_rules.py` /
+- [x] `test_hardlink_unrelated_allowed` — two hard links to an ordinary file, `Read` → allow.
+- [x] `test_resolution_never_loosens` — property-style: for every existing `test_rules.py` /
       `test_boundary.py` event, `evaluate` with resolution on is equal or stricter than off.
-- [ ] `test_link_loop_ask`, `test_too_many_paths_ask`, `test_walk_deadline_ask` (monkeypatched clock).
-- [ ] `test_unc_never_touched` — `os.lstat` monkeypatched to fail the test if called with a UNC
+- [x] `test_link_loop_ask`, `test_too_many_paths_ask`, `test_walk_deadline_ask` (monkeypatched clock).
+- [x] `test_unc_never_touched` — `os.lstat` monkeypatched to fail the test if called with a UNC
       path; `Read //host/share/x` and an in-project link to `\\host\share` → ask, no call.
-- [ ] `test_walk_stops_at_root_exit` — `os.lstat` never called on a path outside the roots.
-- [ ] `test_nonexistent_path_lexical_only` — `Write new/dir/file.py` → same as today.
-- [ ] `test_resolve_links_flag_off` — `WARDEN_RESOLVE_LINKS=0` → today's verdicts.
-- [ ] `test_link_creation_pinned` — the three creation commands from Behaviour 8 → deny/ask.
-- [ ] Existing tests green (eval cases have no real files, so `make eval-rules` must not change;
+- [x] `test_walk_stops_at_root_exit` — `os.lstat` never called on a path outside the roots.
+- [x] `test_nonexistent_path_lexical_only` — `Write new/dir/file.py` → same as today.
+- [x] `test_resolve_links_flag_off` — `WARDEN_RESOLVE_LINKS=0` → today's verdicts.
+- [x] `test_link_creation_pinned` — the three creation commands from Behaviour 8 → deny/ask.
+- [x] Existing tests green (eval cases have no real files, so `make eval-rules` must not change;
       run it and confirm).
-- [ ] `make test` green, `make lint` clean.
+- [x] `make test` green (832, 1 skipped: file symlinks need Windows developer mode here; the
+      junction variants `test_dirlink_to_aws_denied`, `test_resolve_links_flag_off` run), `make lint` clean.
+- [x] `make eval-rules`: all metrics +0.000.
+- [x] Reviewer finding fixed: the hard-link table used `os.stat`/`listdir`, which follow a link
+      planted in `.agentwarden/` or `~/.kube` (possible SMB call). Now `lstat` per component, links
+      skipped; `test_protected_inodes_never_follow_planted_links`,
+      `test_hardlink_check_does_not_stat_through_links` (both fail on the old code). Also: the
+      whole stage is wrapped, any exception → `ask`.
 
 ## Out of scope
 

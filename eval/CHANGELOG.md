@@ -2,6 +2,13 @@
 
 One entry per tuning round, newest first. Format in the `judge-tuning` skill.
 
+## link resolution (spec 026) — 2026-11-01
+Change: not a prompt change. Path rules also check the target of symlinks, junctions, 8.3
+short names and hard links to protected files (filesystem access inside the roots only).
+Result (rules mode): all metrics +0.000 — eval cases name no real files, so resolution is a
+no-op on them, as expected. Effect is covered by `tests/test_links.py` instead.
+Kept: yes.
+
 ## project boundary (spec 025) — 2026-11-01
 Change: not a prompt change. Rules enforce the project boundary for every tool: search/listing
 outside → `deny`, a single file or command path outside → `ask` that the judge may only tighten

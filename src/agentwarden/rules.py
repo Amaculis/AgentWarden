@@ -1,8 +1,10 @@
 """Deterministic rules stage (spec 003): hard denies, then built-in defaults.
 
-No model call, no filesystem access, no network. `evaluate()` runs:
+No model call, no network. The only filesystem access is link resolution (spec 026,
+`links.py`): `lstat`/`readlink` inside the allowed roots. `evaluate()` runs:
 
-1. Hard denies (secrets, self-protection) -- nothing can weaken these.
+1. Hard denies (secrets, self-protection) -- nothing can weaken these -- on the paths as
+   written, then on the same paths after following links.
 2. Project boundary (spec 025) interleaved with the user policy (spec 004): boundary deny,
    policy deny, boundary ask, the rest of the policy.
 3. Built-in defaults (destructive deny, risky ask, safe-read/safe-command allow).
@@ -12,14 +14,19 @@ Returns the first verdict that matches, or `None` if nothing matched.
 
 from __future__ import annotations
 
+import logging
 import os
 import posixpath
 import re
 import shlex
+import time
 from collections.abc import Sequence
 from urllib.parse import urlparse
 
+from agentwarden import links
 from agentwarden.models import ToolEvent, Verdict
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Verdict builders -- every rule verdict has source "rules" and an
@@ -891,6 +898,158 @@ def policy_roots(event: ToolEvent, policy_extra: Sequence[str], extra: Sequence[
 
 
 # ---------------------------------------------------------------------------
+# Link resolution (spec 026): the only filesystem access in the rules
+# ---------------------------------------------------------------------------
+
+MAX_RESOLVED_PATHS = 64
+RESOLVE_BUDGET_S = 0.2
+_RANK = {"allow": 1, "ask": 2, "deny": 3}
+_disabled_logged = False
+
+
+def _stricter(a: Verdict | None, b: Verdict | None) -> Verdict | None:
+    """deny > ask > allow > no verdict; on a tie the first one wins."""
+    if b is None:
+        return a
+    if a is None:
+        return b
+    return b if _RANK[b.decision] > _RANK[a.decision] else a
+
+
+def _resolution_candidates(event: ToolEvent) -> list[tuple[str, str | None]]:
+    """`(path, shell command word)` for every path the rules read from this action."""
+    tool, ti = event.tool_name, event.tool_input
+    if tool in _FILE_TOOLS:
+        return [(p, None) for p in _collect_path_fields(event) or []]
+    if tool in _SEARCH_TOOLS:
+        keys = ("path", "pattern") if tool == "Glob" else ("path", "glob")
+        values = [v for key in keys if (v := _get_str(ti, key))]
+        return [(_literal_base(v), None) for v in values if not _wildcard_escapes(v)]
+    if tool in _SHELL_TOOLS:
+        command = _get_str(ti, "command")
+        if command is None:
+            return []
+        return [
+            (_literal_base(path), word)
+            for word, path in command_path_tokens(command)
+            if path.lower() not in _DEVICE_TOKENS and not _wildcard_escapes(path)
+        ]
+    return []
+
+
+def _via_link(lexical: str, target: str, detail: str, *, ask: bool = False) -> Verdict:
+    text = f"{lexical} is a link to {target}: {detail}"
+    if ask:
+        return _ask(text)
+    return _deny(text, ALT_SELF_PROTECTION if "AgentWarden" in detail else ALT_SECRETS)
+
+
+def _target_verdict(tool: str, lexical: str, target: str, cwd: str) -> Verdict | None:
+    """The hard-deny verdict for the resolved target, where the lexical rules would give one."""
+    if _is_secret_path(target):
+        if tool == "Write":
+            return _via_link(lexical, target, "writing a secret file needs confirmation", ask=True)
+        return _via_link(lexical, target, "a secret file; reading or modifying it is not allowed")
+    if _has_component(target, ".agentwarden"):
+        return _via_link(lexical, target, "AgentWarden's own files; touching them is not allowed")
+    if _is_claude_settings_path(target) and tool not in ("Read", "Grep", "Glob"):
+        return _via_link(lexical, target, "AgentWarden's .claude settings; editing is not allowed")
+    if _is_project_hooks_path(target, cwd):
+        return _via_link(lexical, target, "AgentWarden's hooks; touching them is not allowed")
+    return None
+
+
+def _hardlink_verdict(tool: str, lexical: str, protected: str, kind: str) -> Verdict | None:
+    if kind == "claude_settings" and tool in ("Read", "Grep", "Glob"):
+        return None
+    if kind == "secret" and tool == "Write":
+        return _ask(f"{lexical} is a hard link to {protected}: writing it needs confirmation")
+    detail = "a secret file" if kind == "secret" else "an AgentWarden file"
+    return _deny(
+        f"{lexical} is a hard link to {protected}, {detail}; touching it is not allowed",
+        ALT_SECRETS if kind == "secret" else ALT_SELF_PROTECTION,
+    )
+
+
+def _left_roots_verdict(event: ToolEvent, lexical: str, word: str | None, target: str) -> Verdict:
+    """The boundary verdict for a link whose target is outside every root."""
+    tool = event.tool_name
+    if tool in _SEARCH_TOOLS:
+        grant = _grant_dir(target, event.cwd, is_file=False)
+        return _boundary_deny(f"searching via link {lexical}", target, grant)
+    if word is not None:
+        name = posixpath.basename(word.replace("\\", "/")).lower().removesuffix(".exe")
+        is_file = bool(_PATH_EXTENSION_RE.search(target))
+        grant = _grant_dir(target, event.cwd, is_file=is_file)
+        if name in _LISTING_COMMANDS:
+            what = f"listing or searching ({name}) via link {lexical}"
+            return _boundary_deny(what, target, grant)
+        return _boundary_ask(f"a command path via link {lexical}", target, grant)
+    grant = _grant_dir(target, event.cwd, is_file=True)
+    return _boundary_ask(f"{tool} via link {lexical}", target, grant)
+
+
+def _resolution_stage(
+    event: ToolEvent, roots: Sequence[str]
+) -> tuple[Verdict | None, Verdict | None]:
+    """`(hard verdict, boundary verdict)` for the action's paths after following links.
+
+    Only adds checks: a path that is not inside the roots, or does not exist, is left to the
+    lexical rules. The hard verdict is final like a hard deny; the boundary verdict merges with
+    the lexical boundary one (stricter wins). Any error -> `ask`.
+    """
+    try:
+        return _resolve_paths(event, roots)
+    except Exception:
+        logger.exception("link resolution stage failed")
+        failed = _ask("could not check the action's paths for links")
+        return None, failed.model_copy(update={"consult_judge": True})
+
+
+def _resolve_paths(event: ToolEvent, roots: Sequence[str]) -> tuple[Verdict | None, Verdict | None]:
+    global _disabled_logged
+    if not links.enabled():
+        if not _disabled_logged:
+            logger.warning("WARDEN_RESOLVE_LINKS is off: path rules do not follow links")
+            _disabled_logged = True
+        return None, None
+    cwd = event.cwd
+    paths = [
+        (path, word)
+        for path, word in _resolution_candidates(event)
+        if not _is_unresolved(path) and is_inside_roots(path, cwd, roots)
+    ]
+    paths = [(p, w, full) for p, w in paths if not links.is_unc(full := _display_full(p, cwd))]
+    if not paths:
+        return None, None
+    if len(paths) > MAX_RESOLVED_PATHS:
+        return None, _ask(f"too many paths to check ({len(paths)})").model_copy(
+            update={"consult_judge": True}
+        )
+    abs_roots = [_display_full(r, cwd) for r in roots if not _is_unresolved(r)]
+    deadline = time.monotonic() + RESOLVE_BUDGET_S
+    tool = event.tool_name
+    hard: Verdict | None = None
+    boundary: Verdict | None = None
+    for lexical, word, full in paths:
+        res = links.resolve(full, abs_roots, deadline=deadline)
+        if res.error is not None:
+            failed = _ask(f"could not resolve {lexical} ({res.error})")
+            boundary = _stricter(boundary, failed.model_copy(update={"consult_judge": True}))
+            continue
+        if res.changed:
+            hard = _stricter(hard, _target_verdict(tool, lexical, res.resolved, cwd))
+            if res.left_roots:
+                left = _left_roots_verdict(event, lexical, word, res.resolved)
+                boundary = _stricter(boundary, left)
+                continue
+        match = links.hardlink_target(res.resolved, cwd, abs_roots, _is_secret_path)
+        if match is not None:
+            hard = _stricter(hard, _hardlink_verdict(tool, lexical, *match))
+    return hard, boundary
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -908,7 +1067,10 @@ def evaluate(event: ToolEvent, extra_roots: Sequence[str] = ()) -> Verdict | Non
         return verdict
     loaded = policy_module.load_policy(event.cwd)
     roots = policy_roots(event, loaded.extra_roots, extra_roots)
-    boundary = _boundary_stage(event, roots)
+    resolved_hard, resolved_boundary = _resolution_stage(event, roots)
+    if resolved_hard is not None:
+        return resolved_hard
+    boundary = _stricter(_boundary_stage(event, roots), resolved_boundary)
     if boundary is not None and boundary.decision == "deny":
         return boundary
     verdict = policy_module.match_deny(loaded, event)
