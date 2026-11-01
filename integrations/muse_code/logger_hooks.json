@@ -1,0 +1,11 @@
+{
+  "_comment": "Capture-only hook config for the ONE live Muse Code session (spec 028, step 4 in README.md). Wires hook_logger.py to every event Muse Code is reported to support, instead of AgentWarden's real hooks, so the capture never blocks the session and never costs more than one short run.",
+  "schema_version": 1,
+  "hooks": {
+    "SessionStart": [{ "command": "python3 \"${PROJECT_DIR}/integrations/muse_code/hook_logger.py\" SessionStart", "timeout": 5 }],
+    "UserPromptSubmit": [{ "command": "python3 \"${PROJECT_DIR}/integrations/muse_code/hook_logger.py\" UserPromptSubmit", "timeout": 5 }],
+    "PreToolUse": [{ "command": "python3 \"${PROJECT_DIR}/integrations/muse_code/hook_logger.py\" PreToolUse", "timeout": 5 }],
+    "PostToolUse": [{ "command": "python3 \"${PROJECT_DIR}/integrations/muse_code/hook_logger.py\" PostToolUse", "timeout": 5 }],
+    "Stop": [{ "command": "python3 \"${PROJECT_DIR}/integrations/muse_code/hook_logger.py\" Stop", "timeout": 5 }]
+  }
+}
