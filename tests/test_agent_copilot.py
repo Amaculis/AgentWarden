@@ -109,13 +109,73 @@ def test_vscode_unmapped_tool_asks_without_model(tmp_path):
 
 
 def _cli_body(tool_name: str, tool_args: dict, cwd: str) -> dict:
+    # Shape from docs.github.com/en/copilot/reference/hooks-configuration (command hooks): no
+    # event name, camelCase `sessionId`, `toolArgs` as an object.
     return {
-        "session_id": "s1",
+        "sessionId": "s1",
+        "timestamp": 1761955200000,
         "cwd": cwd,
-        "hookEventName": "preToolUse",
         "toolName": tool_name,
         "toolArgs": tool_args,
     }
+
+
+def test_cli_read_and_prompt_payloads_validate():
+    from agentwarden.models import PromptEvent, ReadEvent
+
+    read = {
+        **_cli_body("view", {"path": "README.md"}, "D:\\p"),
+        "toolResult": {"resultType": "success", "textResultForLlm": "# Project"},
+    }
+    event = ReadEvent.model_validate(CLI_ADAPTER.normalize("read", read))
+    assert event.tool_name == "Read" and event.tool_input == {"file_path": "README.md"}
+    assert event.tool_response["textResultForLlm"] == "# Project"
+    prompt = {"sessionId": "s1", "timestamp": 1, "cwd": "D:\\p", "prompt": "fix the test"}
+    assert PromptEvent.model_validate(CLI_ADAPTER.normalize("prompt", prompt)).prompt
+
+
+def test_cli_accepts_vscode_style_payload_from_shared_config(tmp_path):
+    body = {
+        "session_id": "s1",
+        "cwd": str(tmp_path),
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "rm -rf /"},
+    }
+    event = ToolEvent.model_validate(CLI_ADAPTER.normalize("tool", body))
+    assert evaluate(event).decision == "deny"
+
+
+def _formatter():
+    import importlib.util
+
+    from tests.hooks._support import REPO_ROOT
+
+    path = REPO_ROOT / "hooks" / "formats" / "copilot_cli.py"
+    spec = importlib.util.spec_from_file_location("copilot_cli_format", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("decision", ["allow", "deny", "ask"])
+def test_cli_formatter_prints_top_level_and_claude_style(decision):
+    out = json.loads(_formatter().decision_output(decision, "why", "msg"))
+    assert out["permissionDecision"] == decision
+    assert out["permissionDecisionReason"] == "why"
+    assert out["hookSpecificOutput"]["permissionDecision"] == decision
+
+
+@pytest.mark.parametrize("decision", ["maybe", "", "ALLOW"])
+def test_cli_formatter_unknown_decision_is_deny(decision):
+    out = json.loads(_formatter().decision_output(decision, "why", None))
+    assert out["permissionDecision"] == "deny"
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_cli_formatter_scan_output_top_level():
+    out = json.loads(_formatter().scan_output("careful"))
+    assert out["additionalContext"] == "careful"
 
 
 def _cli_normalized(tool_name: str, tool_args: dict, cwd: str) -> ToolEvent:

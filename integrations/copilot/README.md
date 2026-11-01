@@ -143,6 +143,22 @@ An unmapped tool never reaches the judge: `rules.py`'s `_unknown_agent_tool_rule
 CI work there (editing `.github/workflows/ci.yml`, `rm .github/workflows/old.yml`) is not touched
 by this rule -- covered by `tests/test_agent_copilot.py`.
 
+## Copilot CLI command-hook wire format (verified from docs, 2026-11-01)
+
+Source: <https://docs.github.com/en/copilot/reference/hooks-configuration>.
+
+- stdin: `sessionId`, `timestamp`, `cwd`, `toolName`, `toolArgs` (an object), plus `toolResult`
+  (`resultType`, `textResultForLlm`) for postToolUse and `prompt` for userPromptSubmitted.
+  **No event name in the payload**: `CopilotCliAdapter` sets `hook_event_name` from the daemon
+  endpoint the hook called.
+- stdout: `permissionDecision` / `permissionDecisionReason` / `additionalContext` at the **top
+  level**, not in `hookSpecificOutput` -- hence `hooks/formats/copilot_cli.py`. Without it the
+  CLI would not see our `deny` at all.
+- Exit 2 or any other non-zero exit = deny. **A hook timeout is fail-open** (the tool goes
+  through the CLI's normal permission flow). AgentWarden's own hook deadline (8 s default,
+  `WARDEN_HOOK_TIMEOUT`, max 25 s) must stay below the config's `timeoutSec` (15 in the sample)
+  so the fail-safe is printed before the CLI gives up on the hook.
+
 ## The Copilot CLI `ask` bug (github/copilot-cli#2647)
 
 Per the issue (and the related #4237, #3042), a `preToolUse` hook returning `ask` does get
@@ -162,10 +178,13 @@ agent -- the reason is only visible wherever AgentWarden's own `systemMessage` s
    `on_tool.py`, `on_read.py`, `on_prompt.py` -- reachable from the repo root, or adjust the
    `bash`/`powershell` command paths).
 2. Start the daemon (`make run`, or your own `uvicorn agentwarden.daemon:app` invocation).
-3. For **Copilot CLI**: the sample as written. For **VS Code agent mode**, change
-   `--agent copilot_cli` to `--agent copilot_vscode` in every hook command (and see the
-   config-key-casing guess above -- you may need a second copy of the block under the PascalCase
-   event names if VS Code does not read the camelCase config the CLI uses).
+3. Keep `--agent copilot_cli` for **both** Copilot CLI and VS Code agent mode: the same
+   `.github/hooks/*.json` is read by both, so the `copilot_cli` adapter also accepts VS Code's
+   Claude-style payload, and `hooks/formats/copilot_cli.py` prints the decision both at the top
+   level (what the CLI reads) and in `hookSpecificOutput` (what VS Code reads). Use
+   `--agent copilot_vscode` only in a VS Code-only hook file. If VS Code does not read the
+   camelCase config the CLI uses, you may need a second copy of the block under PascalCase
+   event names (unverified).
 4. Everything else (the daemon URL, `WARDEN_NOTIFY`, `WARDEN_ALLOW`, timeouts) is the same
    environment configuration as the Claude Code integration; see the top-level repo README /
    `docs/CONTEXT.md`.

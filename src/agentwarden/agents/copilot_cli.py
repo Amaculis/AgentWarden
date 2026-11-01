@@ -20,19 +20,37 @@ says not to change it without a spec); the gap is UX, not a dropped decision. Se
 
 from __future__ import annotations
 
-from agentwarden.agents import Adapter
+from dataclasses import dataclass
+from typing import Any
+
+from agentwarden.agents import Adapter, EventKind
 from agentwarden.agents._copilot_common import SHARED_CONFIG_PATHS
 
 # `$COPILOT_HOME` is an env var and cannot be expressed as a fixed path component; the default
-# `~/.copilot/...` location is covered below. Documented gap: a custom `COPILOT_HOME` elsewhere
-# on disk is not caught by this path-component check. See the README.
-_CONFIG_PATHS = SHARED_CONFIG_PATHS + (
-    (".copilot", "hooks"),
-    (".copilot", "settings.json"),
-    (".copilot", "settings.local.json"),
-)
+# `~/.copilot/` is covered whole (hooks, inline settings hooks, plugin-contributed hooks).
+# Documented gaps: a custom `COPILOT_HOME`, and policy files under /etc/github-copilot/ (root-
+# owned on POSIX). See the README.
+_CONFIG_PATHS = SHARED_CONFIG_PATHS + ((".copilot",),)
 
-ADAPTER = Adapter(
+# docs.github.com hooks-configuration reference: command hooks get `sessionId`, `timestamp`,
+# `cwd`, `toolName`, `toolArgs` (an object) and, for postToolUse, `toolResult` -- and no event
+# name at all. The hook script is wired to one event, so the daemon endpoint names it.
+_EVENT_BY_KIND = {"tool": "PreToolUse", "read": "PostToolUse", "prompt": "UserPromptSubmit"}
+
+# The same `.github/hooks/*.json` is read by VS Code too, whose payload uses Claude-style names:
+# accept them as-is so one config file works for both surfaces.
+_CLAUDE_STYLE = ("Bash", "PowerShell", "Read", "Write", "Edit", "MultiEdit", "Grep", "Glob")
+
+
+@dataclass(frozen=True)
+class CopilotCliAdapter(Adapter):
+    def normalize(self, kind: EventKind, body: dict[str, Any]) -> dict[str, Any]:
+        out = super().normalize(kind, body)
+        out.setdefault("hook_event_name", _EVENT_BY_KIND[kind])
+        return out
+
+
+ADAPTER = CopilotCliAdapter(
     name="copilot_cli",
     tool_map={
         "bash": "Bash",
@@ -43,6 +61,8 @@ ADAPTER = Adapter(
         "grep": "Grep",
         "glob": "Glob",
         "web_fetch": "WebFetch",
+        **{t: t for t in _CLAUDE_STYLE},
+        "WebFetch": "WebFetch",
     },
     input_map={
         "Read": {"path": "file_path"},
@@ -53,8 +73,10 @@ ADAPTER = Adapter(
     },
     config_paths=_CONFIG_PATHS,
     field_aliases={
+        "sessionId": "session_id",
         "toolName": "tool_name",
         "toolArgs": "tool_input",
+        "toolResult": "tool_response",
         "hookEventName": "hook_event_name",
     },
     event_names={
