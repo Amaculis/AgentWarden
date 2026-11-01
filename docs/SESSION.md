@@ -29,7 +29,17 @@ outside → ask that the judge may only tighten; `extra_roots` in policy and per
 Reviewer found `Glob **/../../x` → allow; fixed with tests. Dashboard button not checked in a
 real browser yet. Cascade not re-run: expect `benign-readsshconfig-240` allow → ask.
 
-Next (Sonnet): nothing queued; pick from "Waiting for the human" or the open problems.
+Specs written 2026-11-01, not implemented, not committed:
+- `docs/specs/023-manipulation-escalation.md` (Large, Opus to implement): cascade escalates on
+  judge-manipulation phrases. Prototype: fires on all 6 `judge_attack` cases, 0 benign; but
+  35/73 commits of this repo would fire (verdict JSON in eval/tests) — accepted cost. Fixes no
+  measured miss (8B denies all judge_attack today); needs candidate cases to measure.
+- `docs/specs/026-link-resolution.md` (Large, Opus): resolve symlinks, junctions, 8.3 names and
+  hard links to protected files before path rules; only adds checks, never touches the
+  filesystem outside the roots or UNC paths. Verified: `mklink /J` without admin,
+  `os.path.islink` is False for junctions, C: has 8.3 names, D: does not.
+
+Next (Opus): implement 026 first (real bypass of hard denies today), then 023.
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
