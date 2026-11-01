@@ -251,3 +251,139 @@ def test_rules_verdict_marked_decided_by_rules():
     verdict = decide_module.decide(event, None, cascade=(MockProvider(), MockProvider()))
     assert verdict.decision == "deny"
     assert verdict.decided_by == "rules"
+
+
+# --- spec 022: cascade escalates on obfuscation signals -----------------------------------
+#
+# An obfuscation payload (decode call + execution sink + a long encoded blob) so this tests
+# the real wiring from `decide_with_cascade` through `obfuscation.signals`, not just the
+# `should_escalate` predicate in isolation.
+_OBFUSCATED_COMMAND = (
+    "eval(Buffer.from("
+    "'4142434445464748494a4b4c4d4e4f505152535455565758595a6162636465666768696a6b6c6d6e6f70"
+    "7172737475767778797a', 'hex').toString())"
+)
+
+
+def _obfuscated_event() -> ToolEvent:
+    return ToolEvent(
+        session_id="s1",
+        cwd="D:/proj",
+        hook_event_name="PreToolUse",
+        tool_name="Bash",
+        tool_input={"command": _OBFUSCATED_COMMAND},
+    )
+
+
+def test_obfuscation_signals_present_on_obfuscated_event():
+    # Sanity check that the fixture event actually carries signals; if this fails the cascade
+    # tests below would be testing nothing.
+    from agentwarden.obfuscation import signals
+
+    assert signals(_obfuscated_event()) != []
+
+
+def test_confident_allow_with_signals_escalates():
+    local = MockProvider([_out("allow", 5, 0.95)])
+    spark = MockProvider([_out("deny", 90, 0.9)])
+    verdict = decide_with_cascade(_obfuscated_event(), None, local, spark)
+    assert verdict.decision == "deny"
+    assert verdict.decided_by == "spark"
+    assert verdict.escalated is True
+    assert verdict.local_decision == "allow"
+    assert len(spark.calls) == 1
+
+
+def test_local_deny_with_signals_stays_local():
+    local = MockProvider([_out("deny", 95, 0.95)])
+    spark = MockProvider([_out("ask", 50, 0.9)])
+    verdict = decide_with_cascade(_obfuscated_event(), None, local, spark)
+    assert verdict.decision == "deny"
+    assert verdict.decided_by == "local"
+    assert verdict.escalated is False
+    assert spark.calls == []
+
+
+def test_signals_local_only_is_ask(monkeypatch):
+    monkeypatch.setenv("WARDEN_CASCADE", "local_only")
+    local = MockProvider([_out("allow", 5, 0.95)])
+    spark = MockProvider([_out("allow", 5, 0.9)])
+    verdict = decide_with_cascade(_obfuscated_event(), None, local, spark)
+    assert verdict.decision == "ask"
+    assert spark.calls == []
+
+
+def test_signals_flag_off_no_escalation(monkeypatch):
+    monkeypatch.setenv("WARDEN_ESCALATE_OBFUSCATION", "0")
+    local = MockProvider([_out("allow", 5, 0.95)])
+    spark = MockProvider([_out("deny", 90, 0.9)])
+    verdict = decide_with_cascade(_obfuscated_event(), None, local, spark)
+    assert verdict.decision == "allow"
+    assert verdict.decided_by == "local"
+    assert verdict.escalated is False
+    assert spark.calls == []
+
+
+def test_signals_no_spark_is_ask():
+    local = MockProvider([_out("allow", 5, 0.95)])
+    verdict = decide_with_cascade(_obfuscated_event(), None, local, None)
+    assert verdict.decision == "ask"
+    assert verdict.source == "failsafe"
+
+
+# --- should_escalate: the new `signals` parameter ------------------------------------------
+
+
+def test_should_escalate_no_signals_confident_allow_stays_false():
+    from agentwarden.cascade import should_escalate
+    from agentwarden.models import Verdict
+
+    local = Verdict(decision="allow", reason="r", risk=0.05, confidence=0.95, source="judge")
+    assert should_escalate(local) is False
+    assert should_escalate(local, signals=()) is False
+
+
+def test_should_escalate_signals_force_escalation_on_non_deny():
+    from agentwarden.cascade import should_escalate
+    from agentwarden.models import Verdict
+
+    local = Verdict(decision="allow", reason="r", risk=0.05, confidence=0.95, source="judge")
+    assert should_escalate(local, signals=("decode_exec",)) is True
+
+
+def test_should_escalate_signals_do_not_override_local_deny():
+    from agentwarden.cascade import should_escalate
+    from agentwarden.models import Verdict
+
+    local = Verdict(decision="deny", reason="r", risk=0.95, confidence=0.95, source="judge")
+    assert should_escalate(local, signals=("decode_exec",)) is False
+
+
+def test_should_escalate_scan_error_signal_forces_escalation():
+    from agentwarden.cascade import should_escalate
+    from agentwarden.models import Verdict
+
+    local = Verdict(decision="allow", reason="r", risk=0.05, confidence=0.95, source="judge")
+    assert should_escalate(local, signals=("scan_error",)) is True
+
+
+# --- spec 022: a scanner internal error must still escalate, never silently allow ----------
+
+
+def test_obfuscation_scan_error_escalates_through_cascade(monkeypatch):
+    """Monkeypatches `agentwarden.obfuscation.PATTERNS` (see test_obfuscation.py for the
+    rationale) to force `signals()` to return `["scan_error"]`, then checks that a confident
+    local `allow` still goes to Spark because of it."""
+    import agentwarden.obfuscation as obfuscation_module
+
+    class _BoomPatterns(dict):
+        def items(self):
+            raise RuntimeError("boom: pattern table is broken")
+
+    monkeypatch.setattr(obfuscation_module, "PATTERNS", _BoomPatterns())
+
+    local = MockProvider([_out("allow", 5, 0.95)])
+    spark = MockProvider([_out("deny", 80, 0.9)])
+    verdict = decide_with_cascade(_event(), None, local, spark)
+    assert verdict.decided_by == "spark"
+    assert len(spark.calls) == 1
