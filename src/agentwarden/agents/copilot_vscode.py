@@ -17,10 +17,9 @@ from __future__ import annotations
 from agentwarden.agents import Adapter
 from agentwarden.agents._copilot_common import SHARED_CONFIG_PATHS
 
-# `.vscode/settings.json` can point at or disable Copilot customization (GUESSED -- no doc we
-# found names a specific hooks-disable key there, but 029 asks to include it defensively; same
-# aggressive stance as the existing `.claude/settings*.json` self-protection rule).
-_CONFIG_PATHS = SHARED_CONFIG_PATHS + ((".vscode", "settings.json"),)
+# Not `.vscode/settings.json`: no doc names a hooks key there, and config paths are protected for
+# every agent, so it would hard-deny ordinary VS Code settings edits for Claude Code users too.
+_CONFIG_PATHS = SHARED_CONFIG_PATHS
 
 _TOOLS = ("Bash", "PowerShell", "Read", "Write", "Edit", "MultiEdit", "Grep", "Glob", "WebFetch")
 

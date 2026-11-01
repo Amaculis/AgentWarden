@@ -120,6 +120,33 @@ def _cli_body(tool_name: str, tool_args: dict, cwd: str) -> dict:
     }
 
 
+def test_cli_toolargs_as_json_string_is_parsed(tmp_path):
+    body = {**_cli_body("bash", {}, str(tmp_path)), "toolArgs": json.dumps({"command": "rm -rf /"})}
+    event = ToolEvent.model_validate(CLI_ADAPTER.normalize("tool", body))
+    assert event.tool_input == {"command": "rm -rf /"}
+    assert evaluate(event).decision == "deny"
+
+
+def test_cli_toolargs_bad_json_string_raises():
+    body = {**_cli_body("bash", {}, "D:\\p"), "toolArgs": "{not json"}
+    with pytest.raises(agents.AdapterError):
+        CLI_ADAPTER.normalize("tool", body)
+
+
+def test_vscode_settings_is_not_hard_denied(tmp_path):
+    event = ToolEvent.model_validate(
+        {
+            "session_id": "s",
+            "cwd": str(tmp_path),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": ".vscode/settings.json", "content": "{}"},
+        }
+    )
+    verdict = evaluate(event)
+    assert verdict is None or "hook config" not in verdict.reason
+
+
 def test_cli_read_and_prompt_payloads_validate():
     from agentwarden.models import PromptEvent, ReadEvent
 
@@ -246,9 +273,6 @@ def test_cli_unmapped_tool_asks_without_model(tmp_path, tool):
             VSCODE_ADAPTER, "Write", {"file_path": ".github/hooks/aw.json", "content": "{}"}, cwd
         ),
         lambda cwd: _normalized(VSCODE_ADAPTER, "Bash", {"command": "rm -rf .github/hooks"}, cwd),
-        lambda cwd: _normalized(
-            VSCODE_ADAPTER, "Write", {"file_path": ".vscode/settings.json", "content": "{}"}, cwd
-        ),
         lambda cwd: _normalized(
             VSCODE_ADAPTER,
             "Write",

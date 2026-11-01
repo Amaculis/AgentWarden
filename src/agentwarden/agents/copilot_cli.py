@@ -20,10 +20,11 @@ says not to change it without a spec); the gap is UX, not a dropped decision. Se
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
-from agentwarden.agents import Adapter, EventKind
+from agentwarden.agents import Adapter, AdapterError, EventKind
 from agentwarden.agents._copilot_common import SHARED_CONFIG_PATHS
 
 # `$COPILOT_HOME` is an env var and cannot be expressed as a fixed path component; the default
@@ -45,6 +46,14 @@ _CLAUDE_STYLE = ("Bash", "PowerShell", "Read", "Write", "Edit", "MultiEdit", "Gr
 @dataclass(frozen=True)
 class CopilotCliAdapter(Adapter):
     def normalize(self, kind: EventKind, body: dict[str, Any]) -> dict[str, Any]:
+        args = body.get("toolArgs")
+        if isinstance(args, str):
+            # The reference types it `unknown`; scripts in the wild `jq` it as a JSON string.
+            try:
+                parsed = json.loads(args)
+            except ValueError:
+                raise AdapterError(f"{self.name}: toolArgs is not JSON") from None
+            body = {**body, "toolArgs": parsed}
         out = super().normalize(kind, body)
         out.setdefault("hook_event_name", _EVENT_BY_KIND[kind])
         return out

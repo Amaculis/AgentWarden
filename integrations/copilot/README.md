@@ -17,10 +17,9 @@ names and tool names:
 - `src/agentwarden/agents/_copilot_common.py` -- config paths shared by both (leading underscore
   so `agents.discover()` does not try to register it as a third adapter).
 
-No `hooks/formats/copilot*.py` was added: both surfaces' `preToolUse` output schema
-(`{"permissionDecision": "allow"|"deny"|"ask", "permissionDecisionReason": "..."}`, optionally
-wrapped in `hookSpecificOutput`) matches Claude Code's, so the hooks' default Claude-schema output
-is used unchanged.
+`hooks/formats/copilot_cli.py` prints the decision at the top level (what Copilot CLI command
+hooks read) and in `hookSpecificOutput` (what VS Code reads); see "Copilot CLI command-hook wire
+format" below. `copilot_vscode` (VS Code-only hook files) uses the default Claude schema.
 
 ## Sources
 
@@ -95,10 +94,9 @@ Copilot:**
   only config shape with a concrete documented example; if VS Code needs `PreToolUse` as the
   config key, duplicate the block under both keys.
 - Whether `.vscode/settings.json` can point at or disable Copilot hooks. No page we found names
-  a specific settings key for this. `copilot_vscode.py` hard-protects this file anyway (same
-  aggressive stance as this repo's existing `.claude/settings*.json` rule), on the theory that
-  being wrong in the direction of protecting an ordinary settings file too eagerly is the safe
-  failure mode, not the unsafe one.
+  a specific settings key for this, so it is **not** protected: config paths apply to every
+  agent, and a guessed entry would hard-deny ordinary VS Code settings edits for Claude Code
+  users too. Add it once a hooks key there is confirmed.
 - `disableAllHooks: true` as a hook-config top-level key that turns off non-policy hooks (one
   source only).
 - `$COPILOT_HOME` is an environment variable, so a custom location cannot be expressed as one of
@@ -135,9 +133,8 @@ An unmapped tool never reaches the judge: `rules.py`'s `_unknown_agent_tool_rule
 
 - `.github/hooks` (repo-level hook config, both surfaces)
 - `.github/copilot/settings.json`, `.github/copilot/settings.local.json` (inline repo hooks)
-- `.vscode/settings.json` (VS Code adapter only; guessed, see above)
-- `.copilot/hooks`, `.copilot/settings.json`, `.copilot/settings.local.json` (CLI adapter only;
-  user-level default layout, not `$COPILOT_HOME`-aware)
+- `.copilot/` as a whole (CLI adapter; user hooks, inline settings hooks and plugin-contributed
+  hooks live there; default layout only, not `$COPILOT_HOME`-aware)
 
 `.github/workflows/**` is a sibling of `.github/hooks`, not a parent or child of it, so ordinary
 CI work there (editing `.github/workflows/ci.yml`, `rm .github/workflows/old.yml`) is not touched
