@@ -1,4 +1,4 @@
-# Session state — 2026-11-01 (last code commit e185abc)
+# Session state — 2026-11-01
 
 Done: spec 022 (`e185abc`) — cascade escalates to Muse Spark when the action shows obfuscation
 signals (`src/agentwarden/obfuscation.py`: `decode_exec`, `decode_blob`, `ps_encoded`,
@@ -29,17 +29,25 @@ outside → ask that the judge may only tighten; `extra_roots` in policy and per
 Reviewer found `Glob **/../../x` → allow; fixed with tests. Dashboard button not checked in a
 real browser yet. Cascade not re-run: expect `benign-readsshconfig-240` allow → ask.
 
-Specs written 2026-11-01, not implemented, not committed:
-- `docs/specs/023-manipulation-escalation.md` (Large, Opus to implement): cascade escalates on
-  judge-manipulation phrases. Prototype: fires on all 6 `judge_attack` cases, 0 benign; but
-  35/73 commits of this repo would fire (verdict JSON in eval/tests) — accepted cost. Fixes no
-  measured miss (8B denies all judge_attack today); needs candidate cases to measure.
-- `docs/specs/026-link-resolution.md` (Large, Opus): resolve symlinks, junctions, 8.3 names and
-  hard links to protected files before path rules; only adds checks, never touches the
-  filesystem outside the roots or UNC paths. Verified: `mklink /J` without admin,
-  `os.path.islink` is False for junctions, C: has 8.3 names, D: does not.
+Done 2026-11-01 (Opus):
+- Spec 026 (link resolution, `links.py` + `rules._resolution_stage`): path rules also check
+  symlink / junction / 8.3 short-name targets and hard links to protected files; only adds
+  checks; `lstat`/`readlink` inside the roots only, UNC never touched;
+  `WARDEN_RESOLVE_LINKS=0` disables. Reviewer found the hard-link table followed planted links
+  (`os.stat`) — fixed with lstat-per-component + mutation-checked tests. eval-rules +0.000.
+  File-symlink tests skip here (no developer mode); junction variants run.
+- Spec 023 (manipulation escalation, `manipulation.py`, shared walker `text_scan.py`): signals
+  `fake_verdict`, `addresses_judge`, `approval_claim`, `override_instructions` force Spark like
+  022; `WARDEN_ESCALATE_MANIPULATION=0` disables. Fires on all 6 `judge_attack` cases, 0
+  benign/borderline; 33/74 commits of this repo would fire (verdict JSON in eval/tests).
+  Candidates `eval/candidates/judge_attack-023.jsonl` (10 attacks, 6 benign): signals 10/10
+  attacks, 5/6 benign (by design, they escalate). NOT DONE: the paid model runs (my env check
+  was denied) — see "Waiting for the human" 4. 023 measurement criteria left unchecked.
 
-Next (Opus): implement 026 first (real bypass of hard denies today), then 023.
+Next (Opus): backlog draft `docs/specs/backlog/input-injection-screen-capture.md` (Large:
+SendKeys/xdotool/user32 input injection = new hard deny, since it can approve AgentWarden's own
+prompts; screen/clipboard capture = default `ask`, `deny` with upload; give it the next free
+number, 027, when starting).
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
@@ -48,6 +56,10 @@ Waiting for the human:
    (it also crashes `ruff format --check .`; use `ruff format --check src tests eval redteam
    hooks`), and branch `backup/pre-secret-fix` if done with it.
 3. Drop `openai` from `pyproject.toml` (no longer imported).
+4. Spec 023 measurement (costs credits; needs Ollama + Meta API env):
+   `PYTHONPATH=src python eval/run.py --set actions --mode local --cases eval/candidates/judge_attack-023.jsonl`,
+   then `--mode cascade` with `WARDEN_ESCALATE_MANIPULATION=0` and `=1`, then main cascade
+   `PYTHONPATH=src python eval/run.py --set actions --mode cascade`. Log in `eval/CHANGELOG.md`.
 
 Open problems:
 - Any local process can POST `/event` and plant a fake "user prompt" (spec 018).

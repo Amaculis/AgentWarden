@@ -11,7 +11,7 @@ import os
 import time
 from collections.abc import Sequence
 
-from agentwarden import obfuscation
+from agentwarden import manipulation, obfuscation
 from agentwarden.judge import SessionContext, env_float, judge, judge_timeout
 from agentwarden.models import ToolEvent, Verdict, failsafe
 from agentwarden.providers.base import Provider
@@ -29,6 +29,10 @@ def obfuscation_check_enabled() -> bool:
     return os.environ.get("WARDEN_ESCALATE_OBFUSCATION", "1").lower() not in ("0", "false", "no")
 
 
+def manipulation_check_enabled() -> bool:
+    return os.environ.get("WARDEN_ESCALATE_MANIPULATION", "1").lower() not in ("0", "false", "no")
+
+
 def should_escalate(local: Verdict, signals: Sequence[str] = ()) -> bool:
     if local.source != "judge":  # fail-safe: provider error, timeout, unparsable
         return True
@@ -38,7 +42,7 @@ def should_escalate(local: Verdict, signals: Sequence[str] = ()) -> bool:
     high = env_float("WARDEN_ESCALATE_RISK_HIGH", 70) / 100.0
     if local.risk is not None and low <= local.risk <= high:
         return True
-    if signals and local.decision != "deny":  # spec 022: the local model may be fooled
+    if signals and local.decision != "deny":  # specs 022, 023: the local model may be fooled
         return True
     confirm_deny = os.environ.get("WARDEN_CONFIRM_DENY", "").lower() in ("1", "true", "yes")
     return local.decision == "deny" and confirm_deny
@@ -75,11 +79,14 @@ def _cascade(
     if local is not None:
         local_timeout = min(env_float("WARDEN_LOCAL_TIMEOUT", 3.0), remaining())
         local_verdict = judge(event, context, local, timeout=local_timeout)
-        signals = obfuscation.signals(event) if obfuscation_check_enabled() else []
-        if not should_escalate(local_verdict, signals):
+        obfuscated = obfuscation.signals(event) if obfuscation_check_enabled() else []
+        manipulated = manipulation.signals(event) if manipulation_check_enabled() else []
+        if not should_escalate(local_verdict, [*obfuscated, *manipulated]):
             return local_verdict.model_copy(update={"decided_by": "local"})
-        if signals:
-            logger.info("cascade: obfuscation signals %s -> escalate", signals)
+        if obfuscated:
+            logger.info("cascade: obfuscation signals %s -> escalate", obfuscated)
+        if manipulated:
+            logger.info("cascade: manipulation signals %s -> escalate", manipulated)
 
     local_decision = (
         local_verdict.decision if local_verdict and local_verdict.source == "judge" else None

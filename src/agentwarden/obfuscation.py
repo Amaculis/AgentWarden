@@ -9,14 +9,11 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Iterator
-from typing import Any
 
 from agentwarden.models import ToolEvent
+from agentwarden.text_scan import strings
 
 logger = logging.getLogger(__name__)
-
-SKIPPED_KEYS = frozenset({"old_string"})  # code being removed
 
 _DECODE = re.compile(
     r"""\bfrom\s*\([^()]*,\s*['"](?:hex|base64)['"]\s*\)"""  # Buffer.from(x, 'hex')
@@ -74,22 +71,10 @@ def signals(event: ToolEvent) -> list[str]:
     try:
         # One text for the whole action: a decode call in one edit and its sink in another
         # are still one payload.
-        text = "\n".join(_strings(event.tool_input))
+        text = "\n".join(strings(event.tool_input))
         return sorted(
             name for name, patterns in PATTERNS.items() if all(p.search(text) for p in patterns)
         )
     except Exception:
         logger.exception("obfuscation scan failed")
         return ["scan_error"]
-
-
-def _strings(value: Any) -> Iterator[str]:
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            if key not in SKIPPED_KEYS:
-                yield from _strings(item)
-    elif isinstance(value, list | tuple):
-        for item in value:
-            yield from _strings(item)
