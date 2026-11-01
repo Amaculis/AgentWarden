@@ -46,14 +46,15 @@ VS Code and CLI, output schema, PostToolUse/additionalContext and prompt-submit 
 
 ## Acceptance criteria
 
-- [ ] `tests/test_agent_copilot.py` — doc-derived fixtures (marked UNVERIFIED) for each mapped
+- [x] `tests/test_agent_copilot.py` — doc-derived fixtures (marked UNVERIFIED) for each mapped
       tool normalize correctly; `rm -rf /` deny, `.env` read deny, `ls` allow, unmapped `ask`.
-- [ ] Writes and shell commands touching `.github/hooks` (and every other config path) are
+- [x] Writes and shell commands touching `.github/hooks` (and every other config path) are
       hard-denied; editing `.github/workflows/ci.yml` and `rm .github/workflows/old.yml` are not
       hard-denied by the config rule.
-- [ ] Hook end-to-end with `--agent copilot` against the stub daemon.
-- [ ] `integrations/copilot/README.md` with install steps, sources, unverified note, CLI bug.
-- [ ] `make test` green, `make lint` clean, `make eval-rules` delta 0.000.
+- [x] Hook end-to-end with `--agent copilot_cli` (and `copilot_vscode` at the unit level) against
+      a real daemon.
+- [x] `integrations/copilot/README.md` with install steps, sources, unverified note, CLI bug.
+- [x] `make test` green, `make lint` clean, `make eval-rules` delta 0.000.
 
 ## Out of scope
 
