@@ -150,6 +150,8 @@ allow_domains: ["pypi.org", "github.com"]
 
 The policy can never weaken built-in hard denies. Secrets and self-protection rules run before it.
 
+Set `mode: read_only` to look at untrusted code: only `Read`, `Glob` and `Grep` inside the project run without a question, everything else (edits, shell commands, network, MCP tools) asks, and the `allow_*` lists are ignored. No model is called in this mode.
+
 ## Project layout
 
 - `hooks/` — Claude Code hook scripts; forward events to the daemon, fail closed to `ask`.

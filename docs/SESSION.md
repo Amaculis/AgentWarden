@@ -17,6 +17,12 @@ detection 1.000 (contaminated). Logged in `eval/CHANGELOG.md`, README and `meta-
 updated. README cost column ($0.0055) is the 31 Oct figure: this run reported cost 0.0 (pricing
 env not set), escalation rate is unchanged at 0.125.
 
+Spec 024 (read-only policy profile, `mode: read_only` in policy.yaml): only Read/Glob/Grep inside
+the project allowed, everything else `ask`, allow_* ignored, no model call. Idea not yet a spec
+(023, Opus, Large): cascade escalates on prompt-injection phrases in the action (like 022 for
+obfuscation: "ignore previous", "as the reviewer", fake verdict JSON) so a local `allow` is never
+final for them; measure on `judge_attack`.
+
 Next (Sonnet): nothing queued; pick from "Waiting for the human" or the open problems.
 
 Waiting for the human:

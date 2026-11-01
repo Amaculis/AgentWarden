@@ -2,6 +2,12 @@
 # Built-in protections (secrets, AgentWarden self-protection) always apply; this file cannot weaken them.
 version: 1
 
+# normal (default) | read_only. In read_only only Read/Glob/Grep inside the project are allowed;
+# every other tool (edits, shell, network, MCP) asks, and the allow_* lists below are ignored.
+# Use it to look at untrusted code. A typo here makes the daemon ignore the whole file
+# (logged once) and run in normal mode.
+mode: normal
+
 # Paths are globs relative to the project root.
 deny_paths: ["secrets/", "*.pem", "*.key"]
 ask_paths: ["migrations/", "infra/"]

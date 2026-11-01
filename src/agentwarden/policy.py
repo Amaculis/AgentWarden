@@ -13,6 +13,7 @@ import os
 import re
 import shlex
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -28,6 +29,7 @@ _DEFAULT_RELATIVE_PATH = Path(".agentwarden") / "policy.yaml"
 
 class Policy(BaseModel):
     version: int = 1
+    mode: Literal["normal", "read_only"] = "normal"  # spec 024
     deny_paths: list[str] = []
     ask_paths: list[str] = []
     allow_paths: list[str] = []
@@ -301,6 +303,31 @@ def append_rule(path: Path | str, kind: str, value: str) -> bool:
     return True
 
 
+_READ_TOOLS = ("Read", "Glob", "Grep")
+
+
+def _is_project_read(event: ToolEvent) -> bool:
+    """A Read/Glob/Grep call whose every path is provably inside the project (spec 024)."""
+    if event.tool_name not in _READ_TOOLS:
+        return False
+    for key in ("file_path", "path"):
+        value = event.tool_input.get(key)
+        if value is not None and not isinstance(value, str):
+            return False
+    fields = _collect_path_fields(event) or []
+    if event.tool_name == "Read" and not fields:
+        return False
+    return all(_is_inside_project(field, event.cwd) for field in fields)
+
+
+def _read_only_verdict(event: ToolEvent) -> Verdict:
+    if _is_project_read(event):
+        return _allow("read-only profile: reading inside the project")
+    if event.tool_name in _READ_TOOLS:
+        return _ask("read-only profile: this read is not provably inside the project")
+    return _ask(f"read-only profile: {event.tool_name} is not a read tool")
+
+
 def match(policy: Policy, event: ToolEvent) -> Verdict | None:
     """Match an event against the policy. Precedence: deny > ask > allow."""
     if _any_path_matches(event, policy.deny_paths, include_command=True) or _any_command_matches(
@@ -311,6 +338,8 @@ def match(policy: Policy, event: ToolEvent) -> Verdict | None:
         event, policy.ask_commands
     ):
         return _ask("this path or command needs confirmation by policy")
+    if policy.mode == "read_only":  # allow_* lists are ignored in this mode
+        return _read_only_verdict(event)
     if (
         _any_path_matches(event, policy.allow_paths)
         or _any_command_matches(event, policy.allow_commands, exact_tail=True)
