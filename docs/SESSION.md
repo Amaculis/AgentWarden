@@ -73,10 +73,17 @@ no push): `028-muse-code`, `029-copilot`, `030-codex`, worktrees under `.claude/
 Open: env-var homes (`COPILOT_HOME`, `CODEX_HOME`) and `cd dir && …` relative paths bypass the
 config-path shell check; a missing `hooks/formats/<agent>.py` falls back to Claude `ask`.
 
-Next (Opus): backlog draft `docs/specs/backlog/input-injection-screen-capture.md` (Large:
-SendKeys/xdotool/user32 input injection = new hard deny, since it can approve AgentWarden's own
-prompts; screen/clipboard capture = default `ask`, `deny` with upload); number 031 (027–030 are
-taken).
+Done 2026-11-01 (Opus): spec 031 (`input_capture.py` + three rules): simulated input (SendKeys,
+WScript, user32, UIA, xdotool/ydotool/wtype/xte/nircmd/AutoHotkey, osascript System Events,
+`python -c` pyautogui/pynput/keyboard, also inside `-EncodedCommand`) = hard deny in stage 1;
+screen/clipboard capture = default `ask` (judge may tighten), `deny` with an upload; Write/Edit
+of a script file that does either = `ask`. Reviewer found a `python -u -u -u -u -u -c` bypass
+and `-enc $var` — fixed with tests. 1013 tests, eval-rules +0.000; candidates
+`eval/candidates/input-capture.jsonl` (5 tamper, 3 exfiltration, 4 benign): tamper 5/5, benign
+never denied. Not in `docs/demo.md` yet (spec suggests the SendKeys self-approval shot).
+Found on the way, not fixed: `rules.split_command` (boundary stage) lets shlex treat `#` as a
+comment after newlines became `;`, so `echo #\n<cmd>` hides every later line from the boundary
+check; `_UPLOAD_RE` has unbounded `[^|;&]*` gaps (quadratic on repeated `curl`).
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`

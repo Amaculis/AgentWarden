@@ -23,7 +23,7 @@ import time
 from collections.abc import Sequence
 from urllib.parse import urlparse
 
-from agentwarden import agents, links
+from agentwarden import agents, input_capture, links
 from agentwarden.models import ToolEvent, Verdict
 
 logger = logging.getLogger(__name__)
@@ -600,6 +600,40 @@ def _daemon_protection_rule(event: ToolEvent) -> Verdict | None:
 
 
 # ---------------------------------------------------------------------------
+# Stage 1g -- self-protection: synthetic keyboard/mouse input (spec 031)
+# ---------------------------------------------------------------------------
+
+ALT_INPUT_INJECTION = "Ask the user to perform the UI action themselves."
+ALT_INPUT_SEARCH = "Use the Grep tool to search for these names."
+_SEARCH_WORDS = frozenset(
+    {"grep", "egrep", "fgrep", "rg", "ag", "ack", "select-string", "sls", "findstr", "git"}
+)
+
+
+def _input_injection_rule(event: ToolEvent) -> Verdict | None:
+    """Simulated input can click "Yes" on AgentWarden's own `ask`: a hard deny."""
+    if event.tool_name not in _SHELL_TOOLS:
+        return None
+    command = _get_str(event.tool_input, "command")
+    if command is None:
+        return None
+    try:
+        technique = input_capture.injection(command)
+        if technique is None:
+            return None
+        first = next(input_capture.invocations(command), None)
+        searching = first is not None and first[0] in _SEARCH_WORDS
+    except Exception:
+        logger.exception("input injection rule failed")
+        return _ask("could not check the command for simulated keyboard/mouse input")
+    return _deny(
+        f"simulating keyboard/mouse input ({technique}) could approve AgentWarden's own "
+        "prompts and is not allowed",
+        ALT_INPUT_SEARCH if searching else ALT_INPUT_INJECTION,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stage 1 composition
 # ---------------------------------------------------------------------------
 
@@ -612,6 +646,7 @@ def _hard_deny_stage(event: ToolEvent) -> Verdict | None:
         _hooks_rule,
         _agent_config_rule,
         _daemon_protection_rule,
+        _input_injection_rule,
         _unknown_agent_tool_rule,
     ):
         verdict = rule(event)
@@ -710,6 +745,67 @@ def _ask_defaults_rule(command: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Stage 3b2 -- screen/clipboard capture and input-simulating scripts (spec 031)
+# ---------------------------------------------------------------------------
+
+ALT_CAPTURE_UPLOAD = "Save the capture locally and let the user decide whether to share it."
+
+
+def _capture_rule(command: str) -> Verdict | None:
+    """Capture alone -> `ask` the judge may tighten; capture plus an upload -> `deny`."""
+    try:
+        technique = input_capture.capture(command)
+    except Exception:
+        logger.exception("capture rule failed")
+        return _ask("could not check the command for screen or clipboard capture")
+    if technique is None:
+        return None
+    if _UPLOAD_RE.search(command):
+        return _deny(
+            f"capturing the screen or clipboard ({technique}) and sending it out is not allowed",
+            ALT_CAPTURE_UPLOAD,
+        )
+    verdict = _ask(
+        f"this command captures the screen or clipboard ({technique}); confirm before continuing"
+    )
+    return verdict.model_copy(update={"consult_judge": True})
+
+
+def _written_texts(event: ToolEvent) -> list[str]:
+    ti = event.tool_input
+    texts = [v for key in ("content", "new_string", "new_source") if (v := _get_str(ti, key))]
+    edits = ti.get("edits")
+    if isinstance(edits, list):
+        texts += [
+            e["new_string"] for e in edits if isinstance(e, dict) and _get_str(e, "new_string")
+        ]
+    return texts
+
+
+def _script_content_rule(event: ToolEvent) -> Verdict | None:
+    """A script that simulates input or captures the screen -> `ask` (running it shows no
+    pattern, so this is where `write x.ps1; powershell -File x.ps1` gets caught)."""
+    path = next(iter(_collect_path_fields(event) or []), None)
+    if path is None:
+        return None
+    ext = posixpath.splitext(path.replace("\\", "/"))[1].lower()
+    if ext not in input_capture.SCRIPT_EXTENSIONS:
+        return None
+    for text in _written_texts(event):
+        try:
+            technique = input_capture.script_technique(text, ext)
+        except Exception:
+            logger.exception("script content rule failed")
+            return _ask("could not check the script for simulated input or screen capture")
+        if technique:
+            return _ask(
+                f"this script simulates keyboard/mouse input or captures the screen "
+                f"({technique}); confirm before writing it"
+            )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Stage 3c -- safe allow
 # ---------------------------------------------------------------------------
 
@@ -781,6 +877,9 @@ def _default_stage(event: ToolEvent, roots: Sequence[str] = ()) -> Verdict | Non
             return None
         if _destructive_rule(command):
             return _deny("this command destroys data or the filesystem", ALT_DESTRUCTION)
+        capture = _capture_rule(command)
+        if capture is not None:
+            return capture
         if _ask_defaults_rule(command):
             return _ask(
                 "this command uploads data or rewrites git history; confirm before continuing"
@@ -790,6 +889,8 @@ def _default_stage(event: ToolEvent, roots: Sequence[str] = ()) -> Verdict | Non
         return None
     if tool in ("Read", "Grep", "Glob"):
         return _safe_read_rule(event, roots)
+    if tool in _WRITE_TOOLS:
+        return _script_content_rule(event)
     return None
 
 
