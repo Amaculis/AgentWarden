@@ -84,8 +84,10 @@ never denied. Not in `docs/demo.md` yet (spec suggests the SendKeys self-approva
 Done 2026-11-01 (Sonnet): spec 032 — found in 031 and fixed: `split_command` no longer treats `#`
 as a comment (`echo #\n<cmd>` hid every later line from the boundary check); upload / git-history
 detection is now `verb → tail` per `|;&` segment (`_has_upload`, `_has_history_rewrite`), same
-verdicts as the old regexes (oracle tests), linear time. 1084 tests, eval-rules +0.000. Not run
-through `reviewer` yet (self-protection path) — worth one pass.
+verdicts as the old regexes (oracle tests + fuzz), linear time. Reviewer found a scp/rsync
+narrowing (delimiter inside a quoted remote spec) and the same quadratic shape in
+`_DOWNLOAD_PIPE_RE` / `_DISK_DESTROY_RE` (`"dd " * 30000` = 19 s) — both fixed. Open: `shlex` is
+quadratic on one huge token (800 KB → ~11 s per call, pre-existing; hook timeout → `ask`).
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`

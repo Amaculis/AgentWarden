@@ -699,21 +699,43 @@ def _destructive_rm_rule(command: str) -> bool:
     return False
 
 
-_DOWNLOAD_PIPE_RE = re.compile(
-    r"\b(?:curl|wget|iwr|invoke-webrequest|irm)\b[^|]*\|\s*"
-    r"(?:sh|bash|zsh|python3?|iex|invoke-expression)\b",
-    re.IGNORECASE,
+_DOWNLOAD_VERB_RE = re.compile(r"\b(?:curl|wget|iwr|invoke-webrequest|irm)\b", re.IGNORECASE)
+_PIPE_TO_SHELL_RE = re.compile(
+    r"\s*(?:sh|bash|zsh|python3?|iex|invoke-expression)\b", re.IGNORECASE
 )
+_DD_RE = re.compile(r"\bdd\b", re.IGNORECASE)
+_DD_TARGET_RE = re.compile(r"\bof=/dev/", re.IGNORECASE)
 _DISK_DESTROY_RE = re.compile(
-    r"\bmkfs(?:\.\w+)?\b|\bdd\b.*\bof=/dev/|\bformat\s+[a-z]:|\bdiskpart\b",
+    r"\bmkfs(?:\.\w+)?\b|\bformat\s+[a-z]:|\bdiskpart\b",
     re.IGNORECASE,
 )
+
+
+def _download_pipe_to_shell(command: str) -> bool:
+    """Same meaning as `\\b(curl|wget|...)\\b[^|]*\\|\\s*(sh|bash|...)\\b`, but linear (spec 032):
+    a download word in one `|` segment followed by a shell word at the start of the next."""
+    segments = command.split("|")
+    return any(
+        _DOWNLOAD_VERB_RE.search(segments[i]) is not None
+        and _PIPE_TO_SHELL_RE.match(segments[i + 1]) is not None
+        for i in range(len(segments) - 1)
+    )
+
+
+def _dd_to_device(command: str) -> bool:
+    """Same meaning as `\\bdd\\b.*\\bof=/dev/` (`.` stops at a newline), but linear."""
+    for line in command.split("\n"):
+        match = _DD_RE.search(line)
+        if match is not None and _DD_TARGET_RE.search(line, match.end()) is not None:
+            return True
+    return False
 
 
 def _destructive_rule(command: str) -> bool:
     return (
         _destructive_rm_rule(command)
-        or bool(_DOWNLOAD_PIPE_RE.search(command))
+        or _download_pipe_to_shell(command)
+        or _dd_to_device(command)
         or bool(_DISK_DESTROY_RE.search(command))
     )
 
@@ -736,7 +758,7 @@ _UPLOAD_PATTERNS = tuple(
         ),
         (r"\bwget\b", r"--post-(?:data|file)\b"),
         (r"\b(?:nc|ncat)\b", r"<"),
-        (r"\b(?:scp|rsync)\b", r"\S:"),
+        (r"\b(?:scp|rsync)\b", r"\S:"),  # plus `_REMOTE_TOKEN_RE`, see `_verb_then_tail`
         (
             r"\b(?:Invoke-WebRequest|Invoke-RestMethod)\b",
             r"-Method\s+(?:Post|Put)\b|-InFile\b",
@@ -752,14 +774,33 @@ _GIT_HISTORY_PATTERNS = tuple(
     )
 )
 _SEGMENT_SPLIT_RE = re.compile(r"[|;&]")
+# The old scp/rsync pattern ended in `\S+:\S*`, and `\S+` could run across the delimiter that
+# stops the gap: `scp f 'a&b@h:/p'` must still match. After a segment's delimiter, the rest of its
+# whitespace-delimited token may carry the colon.
+_REMOTE_TOKEN_RE = re.compile(r"\S*:")
+_REMOTE_VERB_RE = _UPLOAD_PATTERNS[3][0]
 
 
 def _verb_then_tail(command: str, patterns: tuple[tuple[re.Pattern, re.Pattern], ...]) -> bool:
-    for segment in _SEGMENT_SPLIT_RE.split(command):
+    start = 0
+    while start <= len(command):
+        delimiter = _SEGMENT_SPLIT_RE.search(command, start)
+        end = delimiter.start() if delimiter else len(command)
         for verb, tail in patterns:
-            match = verb.search(segment)
-            if match is not None and tail.search(segment, match.end()) is not None:
+            match = verb.search(command, start, end)
+            if match is None:
+                continue
+            if tail.search(command, match.end(), end) is not None:
                 return True
+            if (
+                verb is _REMOTE_VERB_RE
+                and delimiter is not None
+                and _REMOTE_TOKEN_RE.match(command, end + 1) is not None
+            ):
+                return True
+        if delimiter is None:
+            break
+        start = end + 1
     return False
 
 

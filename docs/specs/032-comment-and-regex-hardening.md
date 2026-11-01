@@ -22,11 +22,15 @@ Two defects found while reviewing spec 031, both in `rules.py`:
 - `split_command` never treats `#` as a comment: every token after it is still returned, so the
   path rules see the whole command. This can only add checks (a real comment containing a path
   may now trigger a boundary `ask`), never remove any.
-- Upload and history-rewrite detection returns exactly the same verdict as before for every
-  command, but runs in time linear in the command length.
-  Method: split on `[|;&]`; in each segment find the **first** verb match, then search the rest of
-  the segment for its flag pattern. The first verb match is enough because the old unbounded gap
-  already let it reach everything a later match could reach.
+- Upload, history-rewrite, download-pipe-to-shell and `dd of=/dev/` detection returns exactly the
+  same verdict as before for every command, but runs in time linear in the command length.
+  Method: split on `[|;&]` (`|` for the download pipe, newline for `dd`); in each segment find the
+  **first** verb match, then search the rest of the segment for its flag pattern. The first verb
+  match is enough because the old unbounded gap already let it reach everything a later match
+  could reach. One exception kept on purpose: the old scp/rsync tail `\S+:` could run across the
+  delimiter, so `scp f 'a&b@h:/p'` still matches (`_REMOTE_TOKEN_RE`).
+- Review (7b269ae) found the scp weakening and the same quadratic shape in `_DOWNLOAD_PIPE_RE` and
+  `_DISK_DESTROY_RE` (`"dd " * 30000` took 19 s); both fixed in this spec.
 
 Example: `echo #\ncat ../secret.txt` → `command_path_tokens` returns `("cat", "../secret.txt")`,
 the boundary rule answers `ask` (before: no path seen).
@@ -48,14 +52,19 @@ the boundary rule answers `ask` (before: no path seen).
 
 - [x] `test_split_command_keeps_tokens_after_hash` — `#` is an ordinary token; later tokens kept.
 - [x] `test_comment_does_not_hide_later_line_from_boundary` — `echo #\ncat ../secret.txt` in `evaluate` → `ask`; same with `ls # x\ncat ~/.ssh/id_rsa` → `deny`.
-- [x] `test_upload_detection_unchanged` — the table of commands (every pattern, flags far away from the verb, flag after `|`/`;` NOT matched) gives the same result as the old regexes (old regexes kept in the test file as the oracle).
+- [x] `test_upload_detection_unchanged`, `test_history_rewrite_detection_unchanged`, `test_download_pipe_and_dd_detection_unchanged` — tables of commands (every pattern, flags far away from the verb, flag after `|`/`;` NOT matched, delimiter-adjacent scp tokens) give the same result as the old regexes (kept in the test file as the oracle). A throwaway fuzz of 800 000 random commands showed 0 divergences.
 - [x] `test_upload_and_history_perf` — `curl `×200 000, `git push `×100 000, `scp `×200 000, `nc `×200 000, `a`×1 000 000 each run in < 1 s.
+- [x] `test_evaluate_perf_on_repeated_verbs` — `dd `, `curl `, `iwr `, `irm `, `curl|`, `rm `, `scp ` ×100 000 through `evaluate` in < 2 s.
 - [x] existing `test_upload_and_history_rewrite_ask` and the 031 capture-upload tests stay green.
 - [x] `make test` green, `make lint` clean (`ruff format --check src tests eval redteam hooks`), eval-rules +0.000.
 
 ## Out of scope
 
-- Other regexes in `rules.py`/`input_capture.py` (already bounded or linear per spec 026/031).
+- Other regexes in `rules.py`/`input_capture.py` beyond the four above (fuzz and stress found no
+  other quadratic one in `evaluate`).
+- `shlex` itself is quadratic on one huge token (800 KB `aaaa…` takes ~11 s per call, same before
+  and after this spec). The hook times out → `ask`; fixing it needs a length guard or own lexer.
+- Known pre-existing misses of the segment split: `nc h 1 2>&1 < f`, `scp -o "X=a;b" f host:/x`.
 - Making the path rules understand real shell comment semantics (treating them as code is the safe side).
 - `cd dir && …` relative paths and env-var config homes (spec 027 open items).
 
