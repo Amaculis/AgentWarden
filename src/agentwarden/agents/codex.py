@@ -33,6 +33,7 @@ What the research found (see the README for exact sources and dates):
 
 from __future__ import annotations
 
+import re
 import shlex
 from typing import Any
 
@@ -43,28 +44,73 @@ from agentwarden.agents import Adapter, AdapterError, EventKind
 _SHELL_TOOLS = ("Bash", "shell", "exec_command", "unified_exec")
 
 
+# learn.chatgpt.com/docs/hooks: `apply_patch` fires PreToolUse with the patch envelope in
+# `tool_input.command`. Its file headers name every path the patch touches.
+_PATCH_FILE_RE = re.compile(r"^\*\*\* (Add|Update|Delete) File: (\S.*?)\s*$")
+_PATCH_MARKERS = ("*** Begin Patch", "*** End Patch", "*** End of File")
+
+
+def _patch_event(tool_input: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    """`(canonical tool, tool_input)` for a patch touching exactly one file, else `None`.
+
+    One canonical event carries one path (027), so a multi-file patch, a move, or any `***`
+    line this parser does not recognise (a header Codex might accept in another spelling)
+    stays an unmapped tool: rules `ask`, the formatter prints `deny`."""
+    patch = tool_input.get("command")
+    if not isinstance(patch, str):
+        return None
+    files: list[tuple[str, str]] = []
+    for line in patch.splitlines():
+        stripped = line.strip()
+        if "***" not in stripped[:8]:
+            continue
+        if line.rstrip() in _PATCH_MARKERS:
+            continue
+        match = _PATCH_FILE_RE.match(line)
+        if match is None:
+            return None  # Move to:, odd spacing, unknown header: do not guess
+        files.append((match.group(1), match.group(2)))
+    if len(files) != 1:
+        return None
+    action, path = files[0]
+    tool = "Edit" if action == "Update" else "Write"
+    return tool, {"file_path": path, "patch": patch}
+
+
 class CodexAdapter(Adapter):
-    """Overrides `normalize` only to turn an argv-list `command` into the canonical string
-    before the base `Adapter.normalize` maps tool/field names (027 interface)."""
+    """Adds two things the declarative map cannot do: an argv-list `command` becomes the
+    canonical string, and a single-file `apply_patch` becomes a Write/Edit of that file."""
 
     def normalize(self, kind: EventKind, body: dict[str, Any]) -> dict[str, Any]:
-        out = dict(body)
+        if kind != "prompt" and body.get("tool_name") == "apply_patch":
+            tool_input = body.get("tool_input")
+            if not isinstance(tool_input, dict):
+                raise AdapterError(f"{self.name}: tool_input is not an object")
+            mapped = _patch_event(tool_input)
+            if mapped is not None:
+                tool, translated = mapped
+                return {
+                    **body,
+                    "tool_name": tool,
+                    "tool_input": translated,
+                    "agent_tool_name": "apply_patch",
+                }
+        out = super().normalize(kind, body)
         tool_input = out.get("tool_input")
-        if kind != "prompt" and isinstance(tool_input, dict):
+        if out.get("tool_name") == "Bash" and isinstance(tool_input, dict):
             command = tool_input.get("command")
             if isinstance(command, list):
                 if not all(isinstance(part, str) for part in command):
                     raise AdapterError(f"{self.name}: command list has a non-string entry")
-                joined = dict(tool_input)
-                joined["command"] = shlex.join(command)
-                out["tool_input"] = joined
-        return super().normalize(kind, out)
+                out["tool_input"] = {**tool_input, "command": shlex.join(command)}
+        return out
 
 
 ADAPTER = CodexAdapter(
     name="codex",
     tool_map={name: "Bash" for name in _SHELL_TOOLS},
-    input_map={},
+    # Documented shape is `command`; `cmd` is what unified exec's `exec_command` takes.
+    input_map={"Bash": {"cmd": "command"}},
     # Whole `.codex` directory (config.toml, hooks.json, any other file in it), project-relative,
     # whichever agent is actually running (027 self-protection). No AGENTS.md-adjacent hook file
     # was found in the research; see the README.

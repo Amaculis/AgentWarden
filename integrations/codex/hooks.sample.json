@@ -1,17 +1,29 @@
 {
-  "_comment": "UNVERIFIED sample (spec 030): schema and location guessed from OpenAI's Codex docs and the openai/codex repo, not tested against a live Codex. See README.md in this directory for sources and what is and is not confirmed. Copy to .codex/hooks.json (project) or ~/.codex/hooks.json (user) and adjust the path to this repo's hooks/on_tool.py and hooks/on_read.py.",
-  "PreToolUse": [
-    {
-      "type": "command",
-      "command": "python3 \"/path/to/AgentWarden/hooks/on_tool.py\" --agent codex",
-      "timeout": 15
-    }
-  ],
-  "PostToolUse": [
-    {
-      "type": "command",
-      "command": "python3 \"/path/to/AgentWarden/hooks/on_read.py\" --agent codex",
-      "timeout": 15
-    }
-  ]
+  "_comment": "UNVERIFIED sample (spec 030), shape from learn.chatgpt.com/docs/hooks: events under \"hooks\", each a list of matcher groups with their own \"hooks\" list. Copy to .codex/hooks.json (project) or ~/.codex/hooks.json (user) and fix the paths to this repo's hooks/. timeout must stay above WARDEN_HOOK_TIMEOUT (default 8 s, max 25 s) so AgentWarden's fail-safe is printed before Codex gives up on the hook.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"/path/to/AgentWarden/hooks/on_tool.py\" --agent codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"/path/to/AgentWarden/hooks/on_read.py\" --agent codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
 }

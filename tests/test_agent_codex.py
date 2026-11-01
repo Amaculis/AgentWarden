@@ -171,6 +171,60 @@ def test_apply_patch_touching_codex_dir_is_never_allow(tmp_path):
     assert verdict.decision != "allow"
 
 
+# apply_patch shape from learn.chatgpt.com/docs/hooks: the envelope is in tool_input.command.
+def _patch(*lines: str) -> str:
+    return "\n".join(["*** Begin Patch", *lines, "*** End Patch"])
+
+
+@pytest.mark.parametrize(
+    ("header", "tool"),
+    [("Update File: src/app.py", "Edit"), ("Add File: src/new.py", "Write")],
+)
+def test_single_file_patch_maps_to_file_tool(header, tool):
+    patch = _patch(f"*** {header}", "@@", "-a", "+b")
+    out = ADAPTER.normalize("tool", _body("apply_patch", {"command": patch}, "D:\\p"))
+    assert out["tool_name"] == tool
+    assert out["tool_input"]["file_path"] == header.split(": ", 1)[1]
+    assert out["tool_input"]["patch"] == patch
+    assert out["agent_tool_name"] == "apply_patch"
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        _patch("*** Update File: a.py", "+x", "*** Update File: .agentwarden/policy.yaml", "+y"),
+        _patch("*** Update File: a.py", "*** Move to: .codex/hooks.json", "+x"),
+        _patch("***  Update File: a.py", "+x"),  # spelling we do not parse
+        _patch("*** Update File: a.py", "+x", "*** Update  File: b.py"),
+        _patch("*** Add File: notes.md", "+***", "+text"),  # a `***` line in content
+        "no envelope at all",
+    ],
+)
+def test_ambiguous_patch_stays_unmapped(patch):
+    out = ADAPTER.normalize("tool", _body("apply_patch", {"command": patch}, "D:\\p"))
+    assert out["tool_name"] == "codex:apply_patch"
+
+
+def test_single_file_patch_hits_hard_denies(tmp_path):
+    cwd = str(tmp_path)
+    for path in (".agentwarden/policy.yaml", ".codex/hooks.json", ".env"):
+        patch = _patch(f"*** Update File: {path}", "+x")
+        assert evaluate(_event("apply_patch", {"command": patch}, cwd)).decision == "deny", path
+    ok = evaluate(_event("apply_patch", {"command": _patch("*** Update File: src/a.py")}, cwd))
+    assert ok is None or ok.decision != "deny"
+
+
+def test_exec_command_cmd_field_hits_hard_deny(tmp_path):
+    cwd = str(tmp_path)
+    for cmd in ("rm -rf .agentwarden", "cat .env", ["rm", "-rf", "/"]):
+        assert evaluate(_event("exec_command", {"cmd": cmd}, cwd)).decision == "deny", cmd
+
+
+def test_apply_patch_non_dict_input_raises():
+    with pytest.raises(AdapterError):
+        ADAPTER.normalize("tool", _body("apply_patch", "*** Begin Patch", "D:\\p"))
+
+
 def test_unmapped_tool_asks_without_model(tmp_path):
     event = _event("browser_click", {"selector": "#ok"}, str(tmp_path))
     verdict = decide(event, provider=_ExplodingProvider())

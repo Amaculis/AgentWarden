@@ -67,8 +67,8 @@ biased toward `deny`/`ask` rather than trusting any single detail.
 - **`apply_patch`'s payload is a unified-diff envelope, possibly multi-file.** (`***** Begin
   Patch` / one or more `*** Update File:` / `*** Add File:` / `*** Delete File:` blocks per call,
   per community writeups and the `prompt_with_apply_patch_instructions.md` file in the
-  `openai/codex` repo.) UNVERIFIED in exact field name (`tool_input.command` vs `.patch` vs
-  `.diff` -- sources disagree, see "27's layer" below).
+  `openai/codex` repo.) The field is `tool_input.command` (learn.chatgpt.com/docs/hooks,
+  re-checked 2026-11-01 during review).
 - **Config/hook file locations.** `~/.codex/config.toml` (user) and `<project>/.codex/config.toml`
   (project, loaded only in trusted projects; cannot override `notify`/`profile`/`profiles`/
   telemetry keys). Hooks are either a `[hooks]` table inline in `config.toml` or a separate
@@ -94,20 +94,17 @@ biased toward `deny`/`ask` rather than trusting any single detail.
    three known decision strings. If a future code path somehow passed something else through,
    this formatter still fails closed rather than guessing.
 3. **`decision_output`/`scan_output` never raise.** They wrap their own body in `try/except` and
-   return a valid `deny` JSON string on any internal error. This matters because
-   `hooks/on_tool.py`'s *own* fallback, when a formatter is missing or itself fails to import or
-   return a string, is Claude Code's schema with `permissionDecision: "ask"` -- exactly the value
-   Codex cannot be trusted with (point 1). Keeping every failure inside this module avoids ever
-   reaching that fallback path. (That fallback itself is 027's, out of scope to change here; see
-   "027 gaps" below.)
-4. **`apply_patch` is left unmapped on purpose.** Codex's patch payload can touch several files
-   in one call; the 027 canonical event (`tool_input.file_path`, one target) cannot carry that
-   losslessly, and the exact field holding the diff text is itself unverified (see above). Rather
-   than guess and risk silently missing a target inside `.agentwarden/` or `.codex/`, `apply_patch`
-   is not in `tool_map`. 027's own unmapped-tool rule (`_unknown_agent_tool_rule`) then `ask`s
-   before any model call, with no path inspection at all -- which trivially satisfies "never
-   `allow`" for every `apply_patch` call, including ones that target protected paths, at the cost
-   of asking about benign patches too.
+   return a valid `deny` JSON string on any internal error. If the module itself fails to import
+   or return a string, `hooks/on_tool.py` now prints a Claude-schema `deny` (027 follow-up
+   `13ad51d`), which Codex reads, so that path is closed too.
+4. **`apply_patch` (learn.chatgpt.com/docs/hooks: the envelope is in `tool_input.command`).**
+   A patch touching exactly one file (`*** Update File:` → `Edit`, `*** Add/Delete File:` →
+   `Write`) is mapped to that file, so the path rules (secrets, `.agentwarden/`, `.codex/`,
+   project boundary) and the judge see it; the patch text goes along as `tool_input.patch`.
+   Anything else stays unmapped -- several files, `*** Move to:`, or any `***` line the parser
+   does not recognise (a header Codex might accept in another spelling, or a `***` line in the
+   content) -- so 027's unmapped-tool rule `ask`s and the formatter prints `deny`. The one-path
+   limit is 027's; see the proposal below.
 5. **`config_paths = ((".codex",),)`** -- the whole project `.codex/` directory, one path
    component, so it matches wherever it appears under the project root (same pattern as the
    existing `.fakedir` test fixture in `tests/test_agents.py`). This covers `config.toml`,
@@ -120,14 +117,15 @@ biased toward `deny`/`ask` rather than trusting any single detail.
 
 ## What we could not verify
 
-- Whether Codex's hook runner does anything other than "mark the hook failed and continue the
-  tool call" for output it cannot parse at all (as opposed to a recognized-but-unsupported
-  `permissionDecision` value, which issue #28437 does describe). If malformed/unparsable JSON is
-  instead treated as a deny or an ignore, we don't know; we assumed the worse case (continues =
-  allow) throughout.
-- The exact wire format of `apply_patch`'s payload (field name, whether it is always a full
-  unified-diff envelope or sometimes a single-file patch) -- hence leaving it unmapped rather than
-  parsing it.
+- Hook failures fail open (learn.chatgpt.com/docs/hooks): a non-zero exit, unparsable output
+  or a timeout marks the hook run failed and **the tool call continues**. AgentWarden's hook
+  always exits 0 and prints a decision, and its own deadline (`WARDEN_HOOK_TIMEOUT`, default 8 s,
+  max 25 s) is below the sample's `timeout` of 30 s -- but if Python itself is missing or the
+  hook path is wrong, Codex runs unprotected. Check `on_tool.py` runs from the configured
+  command before relying on it.
+- The config shape (verified from the same page): events under `"hooks"`, each a list of
+  matcher groups with their own `"hooks"` list; the sample uses `"matcher": "*"` for all tools
+  (that `*` means "all" is assumed from Claude Code's convention).
 - Whether the shell tool is actually named `Bash`, `shell`, `exec_command`, `unified_exec`, or
   varies by Codex version/surface (CLI vs IDE extension) -- hence mapping all four.
 - Whether `scan_output`'s `additionalContext` is honoured on `PostToolUse` for Codex at all.
@@ -136,15 +134,9 @@ biased toward `deny`/`ask` rather than trusting any single detail.
 
 ## 027 layer gaps this adapter ran into
 
-- **No per-formatter fail-safe decision.** 027's `hooks/on_tool.py` hardcodes `"ask"` as the
-  universal fail-safe decision and only lets a formatter *render* that string, not replace the
-  decision value itself for its own fallback path (formatter missing, or raising/returning a
-  non-string). For an agent with no `ask` state, like Codex, that fallback is unsafe in spirit
-  (see point 3 above). This adapter works around it by making its own `decision_output`/
-  `scan_output` bullet-proof so that fallback is never reached in practice, but the underlying
-  27 behaviour is unchanged. Proposal: let `hooks/formats/<agent>.py` optionally export a
-  `FAILSAFE_DECISION` constant (default `"ask"`) that `failsafe_output` uses instead of the
-  hardcoded string.
+- **Missing formatter.** A broken formatter now ends in `deny` (027 follow-up), but if
+  `hooks/formats/codex.py` is deleted the hook prints the Claude schema with `ask`, which Codex
+  continues past. The file lives in AgentWarden's `hooks/` directory; keep it there.
 - **One canonical event, one path.** `apply_patch`'s potentially multi-file payload cannot be
   represented. Proposal: a `tool_input.file_paths: list[str]` canonical shape (or a list of
   canonical events per adapter call) that rules.py's path-checking functions iterate over,
