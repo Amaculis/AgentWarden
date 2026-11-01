@@ -722,26 +722,57 @@ def _destructive_rule(command: str) -> bool:
 # Stage 3b -- risky ask
 # ---------------------------------------------------------------------------
 
-_UPLOAD_RE = re.compile(
-    r"\bcurl\b[^|;&]*\s(?:-d\b|--data\b|--data-raw\b|--data-binary\b|-F\b|--form\b|-T\b|--upload-file\b)"
-    r"|\bcurl\b[^|;&]*-X\s*(?:POST|PUT)\b"
-    r"|\bwget\b[^|;&]*--post-(?:data|file)\b"
-    r"|\b(?:nc|ncat)\b[^|;&]*<"
-    r"|\b(?:scp|rsync)\b[^|;&]*\S+:\S*"
-    r"|\b(?:Invoke-WebRequest|Invoke-RestMethod)\b[^|;&]*-Method\s+(?:Post|Put)\b"
-    r"|\b(?:Invoke-WebRequest|Invoke-RestMethod)\b[^|;&]*-InFile\b",
-    re.IGNORECASE,
+# Each entry is `(verb, tail)`: the tail is searched after the first verb match, up to the next
+# `|`, `;` or `&`. Same meaning as the old `verb[^|;&]*tail` regexes, but linear: those rescanned
+# to the end of the segment for every repeated verb, and bounding the gap would let padding hide a
+# flag (spec 032).
+_UPLOAD_PATTERNS = tuple(
+    (re.compile(verb, re.IGNORECASE), re.compile(tail, re.IGNORECASE))
+    for verb, tail in (
+        (
+            r"\bcurl\b",
+            r"\s(?:-d\b|--data\b|--data-raw\b|--data-binary\b|-F\b|--form\b|-T\b|--upload-file\b)"
+            r"|-X\s*(?:POST|PUT)\b",
+        ),
+        (r"\bwget\b", r"--post-(?:data|file)\b"),
+        (r"\b(?:nc|ncat)\b", r"<"),
+        (r"\b(?:scp|rsync)\b", r"\S:"),
+        (
+            r"\b(?:Invoke-WebRequest|Invoke-RestMethod)\b",
+            r"-Method\s+(?:Post|Put)\b|-InFile\b",
+        ),
+    )
 )
-_GIT_HISTORY_RE = re.compile(
-    r"\bgit\s+push\b[^|;&]*(?:--force-with-lease|--force\b|(?<!-)-f\b)"
-    r"|\bgit\s+reset\s+--hard\b"
-    r"|\bgit\s+clean\b[^|;&]*-f\b",
-    re.IGNORECASE,
+_GIT_HISTORY_PATTERNS = tuple(
+    (re.compile(verb, re.IGNORECASE), re.compile(tail, re.IGNORECASE))
+    for verb, tail in (
+        (r"\bgit\s+push\b", r"--force-with-lease|--force\b|(?<!-)-f\b"),
+        (r"\bgit\s+reset\s+--hard\b", r""),
+        (r"\bgit\s+clean\b", r"-f\b"),
+    )
 )
+_SEGMENT_SPLIT_RE = re.compile(r"[|;&]")
+
+
+def _verb_then_tail(command: str, patterns: tuple[tuple[re.Pattern, re.Pattern], ...]) -> bool:
+    for segment in _SEGMENT_SPLIT_RE.split(command):
+        for verb, tail in patterns:
+            match = verb.search(segment)
+            if match is not None and tail.search(segment, match.end()) is not None:
+                return True
+    return False
+
+
+def _has_upload(command: str) -> bool:
+    return _verb_then_tail(command, _UPLOAD_PATTERNS)
+
+
+def _has_history_rewrite(command: str) -> bool:
+    return _verb_then_tail(command, _GIT_HISTORY_PATTERNS)
 
 
 def _ask_defaults_rule(command: str) -> bool:
-    return bool(_UPLOAD_RE.search(command)) or bool(_GIT_HISTORY_RE.search(command))
+    return _has_upload(command) or _has_history_rewrite(command)
 
 
 # ---------------------------------------------------------------------------
@@ -760,7 +791,7 @@ def _capture_rule(command: str) -> Verdict | None:
         return _ask("could not check the command for screen or clipboard capture")
     if technique is None:
         return None
-    if _UPLOAD_RE.search(command):
+    if _has_upload(command):
         return _deny(
             f"capturing the screen or clipboard ({technique}) and sending it out is not allowed",
             ALT_CAPTURE_UPLOAD,
@@ -926,6 +957,7 @@ def split_command(command: str) -> list[str]:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
         lexer.escape = ""  # keep backslashes: Windows paths
+        lexer.commenters = ""  # `#` must not hide later tokens (spec 032)
         return list(lexer)
     except ValueError:
         return [tok.strip("\"'") for tok in command.split()]
