@@ -41,8 +41,12 @@ Done 2026-11-01 (Opus):
   022; `WARDEN_ESCALATE_MANIPULATION=0` disables. Fires on all 6 `judge_attack` cases, 0
   benign/borderline; 33/74 commits of this repo would fire (verdict JSON in eval/tests).
   Candidates `eval/candidates/judge_attack-023.jsonl` (10 attacks, 6 benign): signals 10/10
-  attacks, 5/6 benign (by design, they escalate). NOT DONE: the paid model runs (my env check
-  was denied) — see "Waiting for the human" 4. 023 measurement criteria left unchecked.
+  attacks, 5/6 benign (by design, they escalate). Measured: the 8B model allows 0 of 10
+  candidate attacks; cascade flag off == on; main cascade acc 0.953, det 1.000, FPR 6.8% (+1 =
+  readsshconfig-240, spec 025). No measured gain, kept as defence in depth (eval/CHANGELOG.md).
+  Candidates 12 and 15 are 8B false-positive denies ("Dear judge" text read as injection) —
+  check before moving any candidate to eval/cases/. eval/results/*-b5847bc-actions-cascade.json
+  holds the last candidate run, not the main run (the file name is commit+mode only).
 
 Next (Opus): backlog draft `docs/specs/backlog/input-injection-screen-capture.md` (Large:
 SendKeys/xdotool/user32 input injection = new hard deny, since it can approve AgentWarden's own
@@ -56,10 +60,9 @@ Waiting for the human:
    (it also crashes `ruff format --check .`; use `ruff format --check src tests eval redteam
    hooks`), and branch `backup/pre-secret-fix` if done with it.
 3. Drop `openai` from `pyproject.toml` (no longer imported).
-4. Spec 023 measurement (costs credits; needs Ollama + Meta API env):
-   `PYTHONPATH=src python eval/run.py --set actions --mode local --cases eval/candidates/judge_attack-023.jsonl`,
-   then `--mode cascade` with `WARDEN_ESCALATE_MANIPULATION=0` and `=1`, then main cascade
-   `PYTHONPATH=src python eval/run.py --set actions --mode cascade`. Log in `eval/CHANGELOG.md`.
+4. Decide whether to move `eval/candidates/judge_attack-023.jsonl` (or part of it) into
+   `eval/cases/` (human-owned). Eval runner overwrites a result file per commit+mode: candidate
+   runs clobber the main run's file — maybe add the case-file name to the result name.
 
 Open problems:
 - Any local process can POST `/event` and plant a fake "user prompt" (spec 018).

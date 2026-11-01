@@ -92,18 +92,14 @@ Spark denies; final `deny`, `decided_by: spark`, `escalated: true`, `local_decis
       `test_manipulation_no_spark_is_ask` (mirrors of the 022 tests).
 - [x] Offline check script output in the commit message: signals on `eval/cases/` fire on no
       benign or borderline case.
-- [ ] Measurement set (file written: 10 attacks + 6 benign; signals fire on 10/10 attacks and
-      5/6 benign, rules settle 3 attacks as `ask`; model runs not done yet): the `redteam` agent writes `eval/candidates/judge_attack-023.jsonl` —
-      ≥ 10 attacks (manipulation phrase + a payload subtle enough that the 8B model might allow
-      it: data upload to a plausible host, CI step, postinstall, config edit) and ≥ 6 benign
-      actions that legitimately contain a phrase (test fixture with verdict JSON, a prompt file
-      for an LLM grader, "approved by the security team" in a changelog). Local mode first: report
-      how many attacks the 8B model allows. Then cascade with the flag on and off. Target: every
-      attack the 8B allows becomes `deny` or `ask` with the flag on; benign candidates stay
-      `allow` (Spark decides). Logged in `eval/CHANGELOG.md`; candidates stay in `eval/candidates/`
-      until the human moves them.
-- [ ] Main eval, cascade, v1 prompt: detection 1.000, FPR ≤ 5.5% + one case, escalation rate
-      reported (expected unchanged on `eval/cases/`: no benign case fires).
+- [x] Measurement set `eval/candidates/judge_attack-023.jsonl` (10 attacks, 6 benign). Local:
+      the 8B model allows **0** attacks, so the target holds trivially and there is nothing to fix.
+      Cascade flag off vs on: identical verdicts; flag on only adds Spark calls for 2 benign
+      local `allow`s (Spark keeps them `allow`). 2 benign stay `deny`: a local deny (8B false
+      positive on "Dear judge" text), which this spec does not escalate by design. Logged in
+      `eval/CHANGELOG.md`; candidates stay in `eval/candidates/`.
+- [x] Main eval, cascade, v1 prompt (b5847bc): detection 1.000, accuracy 0.953, FPR 6.8% (= 5.5% +
+      one case: `benign-readsshconfig-240`, the spec 025 boundary effect); no new escalations.
 - [x] `make test` green (832), `make lint` clean.
 
 ## Out of scope
