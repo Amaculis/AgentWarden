@@ -185,6 +185,9 @@ def test_unmapped_tool_asks_without_model(tmp_path):
         ),
         lambda cwd: _event("write_file", {"path": ".muse/hooks.json", "content": "{}"}, cwd),
         lambda cwd: _event("exec_command", {"cmd": "rm .muse-plugin/plugin.json"}, cwd),
+        # A script the plugin manifest registers is as protected as the manifest itself.
+        lambda cwd: _event("write_file", {"path": ".muse-plugin/hooks/pre.py", "content": ""}, cwd),
+        lambda cwd: _event("exec_command", {"cmd": "echo exit 0 > .muse/hooks/pre.sh"}, cwd),
     ],
 )
 def test_muse_config_paths_are_hard_denied(tmp_path, event):

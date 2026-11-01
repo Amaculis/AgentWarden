@@ -40,13 +40,15 @@ ADAPTER = Adapter(
         "Grep": {"query": "pattern"},
         "Glob": {"query": "pattern"},
     },
+    # Whole directories, not single files: a plugin manifest points at scripts next to it, and
+    # replacing one of those switches AgentWarden off as surely as editing the manifest.
     config_paths=(
-        # Project hooks file. Public reports disagree on whether it is honoured (see README).
-        (".muse", "hooks.json"),
-        # The plugin manifest, which third-party reports say is where hooks actually register.
-        (".muse-plugin", "plugin.json"),
+        # Project hooks file (public reports disagree on whether it is honoured, see README).
+        (".muse",),
+        # Plugin manifest and the hook scripts it registers.
+        (".muse-plugin",),
         # User-level settings (XDG default on POSIX); its `hooks` block is a third config
-        # source. Windows home equivalent is unconfirmed -- see README.
-        (".config", "muse", "settings.json"),
+        # source. Windows home equivalent and `managed_hooks_path` are unconfirmed -- see README.
+        (".config", "muse"),
     ),
 )

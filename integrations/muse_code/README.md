@@ -96,12 +96,20 @@ before trusting any of it in a demo.
 
 ## Live check (ONE short Muse Code session — budget is limited)
 
+AgentWarden is **off** during this session (the logger never blocks), and the logger writes
+every payload in full, including PostToolUse results — i.e. the contents of files Muse Code
+reads. So:
+
+0. Make an empty scratch folder outside any real project, e.g. `C:\tmp\muse-capture`, with
+   only a `README.md` and a **fake** `.env` (`API_KEY=fake-value-for-capture`). Never run the
+   capture in a real project or with real secrets on disk next to it.
 1. Swap in the capture config: copy `integrations/muse_code/logger_hooks.json` to
-   `.muse/hooks.json` in a scratch project (and, if step 1 shows it is ignored, also try it
-   as `.muse-plugin/plugin.json`'s hook declaration).
-2. Run one short session: a plain `ls`-equivalent command, one file read, one file
-   write/edit, one search, and one attempted `.env` read (expect Muse Code's own behaviour,
-   not AgentWarden's — the logger never blocks).
+   `.muse/hooks.json` in that scratch folder (and, if step 3 shows it is ignored, also try it
+   as `.muse-plugin/plugin.json`'s hook declaration). Point the `command` paths at this
+   repo's `integrations/muse_code/hook_logger.py`.
+2. Run one short session there: a plain `ls`-equivalent command, one file read, one file
+   write/edit, one search, and one attempted read of the fake `.env` (expect Muse Code's own
+   behaviour, not AgentWarden's).
 3. Stop the session, open `integrations/muse_code/muse_code_capture.jsonl`, and for each
    line note: did `.muse/hooks.json` actually fire (file has entries at all)? What is
    `tool_name` for the shell command — `exec_command`, `shell`, or something else — and
