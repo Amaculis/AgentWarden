@@ -57,10 +57,21 @@ included; optional `hooks/formats/<agent>.py` output formatter, any failure → 
 fail-safe. Found on the way: before 027 a foreign shell tool name skipped every hard deny.
 Reviewer: no findings. 905 tests, eval-rules +0.000.
 
-In progress: specs 028 (Muse Code), 029 (Copilot), 030 (Codex) — three Sonnet agents in their
-own worktrees on branches `028-muse-code`, `029-copilot`, `030-codex` (from `023a161`), commit
-there, no push; the human merges. Only Muse Code can be checked live (tight budget: one short
-hook-logger session). 030 needs an Opus reviewer before merge (it formats hook output).
+027 follow-ups on main: broken formatter → Claude-schema `deny` (`13ad51d`); on_read forwards
+payloads without an event name (`fe6c0a0`).
+
+Ready to merge (Opus-reviewed, review findings fixed, pairwise merge-clean, rebased on `fe6c0a0`,
+no push): `028-muse-code`, `029-copilot`, `030-codex`, worktrees under `.claude/worktrees/`.
+- 028: shell tools from a third-party issue, other tool names guessed; config dirs `.muse/`,
+  `.muse-plugin/`, `~/.config/muse/`. Live check = one short session in a scratch folder with a
+  fake `.env` (`integrations/muse_code/README.md`); AgentWarden is off during it.
+- 029: `copilot_cli` follows the docs.github.com hooks-configuration reference (no event name,
+  `sessionId`, top-level `permissionDecision`), formatter prints top-level + `hookSpecificOutput`
+  so one `.github/hooks` file serves CLI and VS Code. CLI timeout is fail-open. Not live-tested.
+- 030: Codex has no working `ask` → formatter prints `deny`; single-file `apply_patch` mapped to
+  Write/Edit, multi-file → deny; hook failures in Codex fail open. Not live-tested.
+Open: env-var homes (`COPILOT_HOME`, `CODEX_HOME`) and `cd dir && …` relative paths bypass the
+config-path shell check; a missing `hooks/formats/<agent>.py` falls back to Claude `ask`.
 
 Next (Opus): backlog draft `docs/specs/backlog/input-injection-screen-capture.md` (Large:
 SendKeys/xdotool/user32 input injection = new hard deny, since it can approve AgentWarden's own
