@@ -129,6 +129,28 @@ def test_env_read_via_read_file_is_denied(tmp_path):
     assert verdict is not None and verdict.decision == "deny"
 
 
+@pytest.mark.parametrize("tool", ["exec_command", "shell"])
+def test_argv_list_command_hits_hard_deny(tmp_path, tool):
+    for field in ("cmd", "command"):
+        event = _event(tool, {field: ["bash", "-lc", "cat .env"]}, str(tmp_path))
+        assert event.tool_input["command"] == "bash -lc 'cat .env'"
+        assert evaluate(event).decision == "deny"
+
+
+def test_argv_list_with_non_string_entry_raises():
+    from agentwarden.agents import AdapterError
+
+    body = {
+        "session_id": "s",
+        "cwd": "D:\\p",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "shell",
+        "tool_input": {"command": ["rm", 1]},
+    }
+    with pytest.raises(AdapterError):
+        muse_code.ADAPTER.normalize("tool", body)
+
+
 def test_ls_via_exec_command_is_allowed(tmp_path):
     cwd = str(tmp_path)
     verdict = evaluate(_event("exec_command", {"cmd": "ls"}, cwd))

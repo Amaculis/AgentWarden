@@ -94,6 +94,12 @@ before trusting any of it in a demo.
 5. Run Muse Code in the project; a denied action should show the same deny Claude Code
    shows for the same command.
 
+**`${PROJECT_DIR}` in `hooks.json` is unverified**, and source 2 says hooks run with a cleared
+environment. If the variable is empty the script path does not exist, Python exits non-zero,
+and what Muse Code then does is unknown (Claude Code proceeds: silent fail-open). Prefer an
+absolute path to this repo's `hooks/` in the real config, and confirm in the live check that a
+deny actually blocks.
+
 ## Live check (ONE short Muse Code session — budget is limited)
 
 AgentWarden is **off** during this session (the logger never blocks), and the logger writes

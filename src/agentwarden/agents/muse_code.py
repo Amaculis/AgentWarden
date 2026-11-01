@@ -15,9 +15,29 @@ guessed from common Codex/Claude-style naming; treat every mapping as UNVERIFIED
 live check replaces it.
 """
 
-from agentwarden.agents import Adapter
+import shlex
+from typing import Any
 
-ADAPTER = Adapter(
+from agentwarden.agents import Adapter, AdapterError, EventKind
+
+
+class MuseCodeAdapter(Adapter):
+    """Codex-style payloads (reported) may carry the shell command as an argv list; the rules
+    only read a string `command`, so a list would skip every shell hard deny."""
+
+    def normalize(self, kind: EventKind, body: dict[str, Any]) -> dict[str, Any]:
+        out = super().normalize(kind, body)
+        tool_input = out.get("tool_input")
+        if out.get("tool_name") == "Bash" and isinstance(tool_input, dict):
+            command = tool_input.get("command")
+            if isinstance(command, list):
+                if not all(isinstance(part, str) for part in command):
+                    raise AdapterError(f"{self.name}: command list has a non-string entry")
+                out["tool_input"] = {**tool_input, "command": shlex.join(command)}
+        return out
+
+
+ADAPTER = MuseCodeAdapter(
     name="muse_code",
     tool_map={
         # Confirmed to exist in the 1.4.7 binary (destructive_command_guard issue #572);
