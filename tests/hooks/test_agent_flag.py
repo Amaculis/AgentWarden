@@ -137,10 +137,21 @@ def test_missing_formatter_uses_claude_schema(tmp_path, monkeypatch):
         "x = 1\n",
     ],
 )
-def test_broken_formatter_is_claude_failsafe(tmp_path, monkeypatch, stub_daemon, source):
-    stub_daemon.body = DENY
-    formats = _formats(tmp_path, source)
-    _assert_failsafe(_run_in_process(monkeypatch, formats, url=stub_daemon.url))
+@pytest.mark.parametrize("daemon", ["ask", "allow", "down"])
+def test_broken_formatter_is_claude_schema_deny(tmp_path, monkeypatch, stub_daemon, source, daemon):
+    # Spec 027 follow-up: an agent with its own schema may read our `ask` as "continue" (Codex),
+    # so a broken formatter must print the one decision that stops the call.
+    stub_daemon.body = json.dumps({"decision": daemon, "reason": "r", "source": "rules"}).encode()
+    url = "http://127.0.0.1:1" if daemon == "down" else stub_daemon.url
+    monkeypatch.setenv("WARDEN_ALLOW", "explicit")
+    from hooks import on_tool
+
+    monkeypatch.setattr(on_tool, "FORMATS_DIR", _formats(tmp_path, source))
+    stdin = json.dumps(SAMPLE_PRE_TOOL_USE).encode()
+    out = on_tool.run(stdin, {"WARDEN_URL": url, "WARDEN_ALLOW": "explicit"}, agent="fakeagent")
+    hso = json.loads(out)["hookSpecificOutput"]
+    assert hso["permissionDecision"] == "deny"
+    assert hso["permissionDecisionReason"] == "AgentWarden hook output formatter failed"
 
 
 def test_malformed_agent_in_run_is_failsafe(tmp_path, monkeypatch):

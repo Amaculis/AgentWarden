@@ -37,6 +37,10 @@ DEFAULT_AGENT = "claude_code"
 AGENT_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 AGENT_HEADER = "X-AgentWarden-Agent"
 FORMATS_DIR = Path(__file__).resolve().parent / "formats"
+FORMATTER_FAILED_REASON = "AgentWarden hook output formatter failed"
+FORMATTER_FAILED_MESSAGE = (
+    "\U0001f6e1 AgentWarden: output formatter broken, blocked this action (fail-safe)"
+)
 
 
 def _dump(obj: dict) -> str:
@@ -96,12 +100,22 @@ def _render(formatter: ModuleType | None, decision: str, reason: str, message: s
     return out
 
 
+def formatter_failure_output(notify: bool) -> str:
+    """The agent has its own output schema but its formatter failed: print a Claude-schema
+    `deny`. Some agents treat an `ask` they cannot use as "continue" (Codex), so the one
+    decision we can still print must be the one that stops the call."""
+    message = FORMATTER_FAILED_MESSAGE if notify else None
+    return _decision_output("deny", FORMATTER_FAILED_REASON, message)
+
+
 def failsafe_output(notify: bool, formatter: ModuleType | None = None) -> str:
     message = FAILSAFE_MESSAGE if notify else None
+    if formatter is None:
+        return _decision_output("ask", FAILSAFE_REASON, message)
     try:
         return _render(formatter, "ask", FAILSAFE_REASON, message)
     except Exception:
-        return _decision_output("ask", FAILSAFE_REASON, message)
+        return formatter_failure_output(notify)
 
 
 def parse_verdict(status: int, body: bytes) -> dict | None:
@@ -209,6 +223,7 @@ def _record(event: dict) -> None:
 def run(stdin_bytes: bytes, env: Mapping[str, str], agent: str | None = DEFAULT_AGENT) -> str:
     """The whole hook pipeline. Never raises; returns what to print."""
     notify = True
+    formatter: ModuleType | None = None
     try:
         notify = env.get("WARDEN_NOTIFY", "").lower() != "off"
         if agent is None or not AGENT_RE.match(agent):
@@ -216,7 +231,7 @@ def run(stdin_bytes: bytes, env: Mapping[str, str], agent: str | None = DEFAULT_
         try:
             formatter = load_formatter(agent)
         except Exception:
-            return failsafe_output(notify)
+            return formatter_failure_output(notify)
         try:
             event = json.loads(stdin_bytes.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -236,6 +251,8 @@ def run(stdin_bytes: bytes, env: Mapping[str, str], agent: str | None = DEFAULT_
             return failsafe_output(notify, formatter)
         return build_output(verdict, env.get("WARDEN_ALLOW", "passthrough"), formatter)
     except Exception:
+        if formatter is not None:
+            return formatter_failure_output(notify)
         return failsafe_output(notify)
 
 

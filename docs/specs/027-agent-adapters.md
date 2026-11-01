@@ -83,7 +83,12 @@ stdout {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":
 - Unmapped foreign tool → rules `ask`, never the judge, never `allow`.
 - Adapter module fails to import → logged, that adapter is missing → its header is unknown →
   `ask`. Other adapters still load.
-- Formatter module in `hooks/formats/` fails to import or raises → Claude-schema fail-safe `ask`.
+- Formatter module in `hooks/formats/` fails to import or raises → Claude-schema **`deny`**
+  ("AgentWarden hook output formatter failed"), not `ask`: an agent with its own schema may
+  treat an `ask` it cannot use as "continue" (Codex does, openai/codex#28437). Changed after
+  030's research.
+- Known gap: if an agent needs a formatter and `hooks/formats/<agent>.py` is missing, the hook
+  prints the Claude schema; such agents must document it in their integration README.
 
 ## Acceptance criteria
 
