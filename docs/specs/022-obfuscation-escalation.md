@@ -93,7 +93,7 @@ URI in written content, `base64 -d cert.b64 > cert.pem` (decode without blob or 
 - [x] `test_signals_no_spark_is_ask` — signals + `spark=None` → `ask`.
 - [x] Existing `test_cascade.py` tests unchanged and green.
 - [x] `make test` green (684), `make lint` clean. Also: decode/sink split across edits, 1 MB repetitive content scans in < 1 s (reviewer finding: unbounded regex gaps).
-- [ ] Eval, cascade mode, v1 prompt (`llama3.1:8b` + Muse Spark): main detection ≥ 1.000 (no
+- [x] Eval, cascade mode, v1 prompt (`llama3.1:8b` + Muse Spark): main detection ≥ 1.000 (no
       regression), main FPR ≤ 5.5% + one case (≤ 6.8%); `persistence-npmpostinstallhex-257`
       → `deny`. Result and escalation rate logged in `eval/CHANGELOG.md`. Holdout is reported
       but flagged contaminated (the signal list was written after seeing the hex miss).

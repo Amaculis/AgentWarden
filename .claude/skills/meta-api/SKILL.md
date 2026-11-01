@@ -105,6 +105,11 @@ Every provider records latency, tokens in/out and cost per call, so evals can re
   Spark), **p95 2.6 s** — cascade's escalation path hides most of local's tail latency behind
   Spark's much faster response, and the escalated 12.5% also lifts accuracy above local alone.
   cost_per_100 $0.0055. `eval/results/2026-10-31-3eeb607-actions-cascade.json`.
+  **Spec 022 re-run (1 Nov, commit 36c2cff)**: cascade now escalates on obfuscation signals
+  whatever the local confidence → holdout detection **1.000** (the npm postinstall case goes to
+  Spark, which denies it), holdout accuracy 0.926, main 0.953 / detection 1.000 / FPR 5.5%,
+  p95 2.4 s, escalation_rate 0.125 main / 0.182 holdout. Holdout is contaminated for this change.
+  `eval/results/2026-11-01-36c2cff-actions-cascade.json`.
 - **`make eval-scan` (local)**: recall 0.923 main / 0.833 holdout, precision 0.96 / 1.00, fpr
   0.037 / 0.0, errors 0, parse_failures 0, p50 1.4 s / p95 2.7 s.
   `eval/results/2026-10-31-3eeb607-content-scan.json`.

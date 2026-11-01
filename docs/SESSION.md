@@ -1,4 +1,4 @@
-# Session state — 2026-11-01 (last commit e185abc)
+# Session state — 2026-11-01 (last code commit e185abc)
 
 Done: spec 022 (`e185abc`) — cascade escalates to Muse Spark when the action shows obfuscation
 signals (`src/agentwarden/obfuscation.py`: `decode_exec`, `decode_blob`, `ps_encoded`,
@@ -11,11 +11,13 @@ perf tests. Signals are scanned over all of `tool_input` joined (split decode/si
 Offline check: on `eval/cases/` signals fire on 5 deny cases only (254, 257, 245, 242, 249),
 **no benign case**, so main FPR cannot move from this mechanism (only from model noise).
 
-Next: the open spec 022 criterion — cascade eval (costs API credits, needs Ollama up):
-`WARDEN_LOCAL_TIMEOUT=20 WARDEN_JUDGE_TIMEOUT=25 WARDEN_DECISION_BUDGET=26
-PYTHONPATH=src python eval/run.py --set actions --mode cascade`; expect 257 → deny, main
-detection 1.000, main FPR ≤ 6.8%; log in `eval/CHANGELOG.md`, update README numbers if they
-change. Then Sonnet work: human-wait items below.
+Eval (cascade, v1 prompt, `36c2cff`): 257 allow → deny via Spark; main acc 0.953, detection
+1.000, FPR 5.5% (was 11.0%, but that drop is 8B noise, not this change); holdout acc 0.926,
+detection 1.000 (contaminated). Logged in `eval/CHANGELOG.md`, README and `meta-api` skill
+updated. README cost column ($0.0055) is the 31 Oct figure: this run reported cost 0.0 (pricing
+env not set), escalation rate is unchanged at 0.125.
+
+Next (Sonnet): nothing queued; pick from "Waiting for the human" or the open problems.
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
