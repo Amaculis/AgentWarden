@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "python3 ./hooks/on_tool.py --agent copilot_cli",
+        "powershell": "python ./hooks/on_tool.py --agent copilot_cli",
+        "timeoutSec": 15
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "python3 ./hooks/on_read.py --agent copilot_cli",
+        "powershell": "python ./hooks/on_read.py --agent copilot_cli",
+        "timeoutSec": 15
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "bash": "python3 ./hooks/on_prompt.py --agent copilot_cli",
+        "powershell": "python ./hooks/on_prompt.py --agent copilot_cli",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}
