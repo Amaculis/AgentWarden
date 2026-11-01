@@ -47,13 +47,13 @@ policy, sandbox, MCP): which events exist, payload fields, tool names (`shell`, 
 ## Acceptance criteria
 
 Variant A:
-- [ ] `tests/test_agent_codex.py` — doc/source-derived fixtures (marked UNVERIFIED) normalize
+- [x] `tests/test_agent_codex.py` — doc/source-derived fixtures (marked UNVERIFIED) normalize
       correctly; `rm -rf /` deny, `.env` read deny, `ls` allow, unmapped `ask`; a patch touching
       `.agentwarden/` or a Codex config path is denied or `ask`, never allow.
-- [ ] Formatter tests: every decision and the fail-safe render in Codex's schema; a broken
+- [x] Formatter tests: every decision and the fail-safe render in Codex's schema; a broken
       formatter ends in the 027 fail-safe.
-- [ ] Hook end-to-end with `--agent codex` against the stub daemon.
-- [ ] `make test` green, `make lint` clean, `make eval-rules` delta 0.000.
+- [x] Hook end-to-end with `--agent codex` against the stub daemon.
+- [x] `make test` green, `make lint` clean, `make eval-rules` delta 0.000.
 
 Variant B:
 - [ ] `integrations/codex/README.md` and the backlog draft, with sources.

@@ -1,0 +1,17 @@
+{
+  "_comment": "UNVERIFIED sample (spec 030): schema and location guessed from OpenAI's Codex docs and the openai/codex repo, not tested against a live Codex. See README.md in this directory for sources and what is and is not confirmed. Copy to .codex/hooks.json (project) or ~/.codex/hooks.json (user) and adjust the path to this repo's hooks/on_tool.py and hooks/on_read.py.",
+  "PreToolUse": [
+    {
+      "type": "command",
+      "command": "python3 \"/path/to/AgentWarden/hooks/on_tool.py\" --agent codex",
+      "timeout": 15
+    }
+  ],
+  "PostToolUse": [
+    {
+      "type": "command",
+      "command": "python3 \"/path/to/AgentWarden/hooks/on_read.py\" --agent codex",
+      "timeout": 15
+    }
+  ]
+}
