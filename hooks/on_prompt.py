@@ -17,12 +17,15 @@ EVENT_DEADLINE_S = 2.0
 def _send_to_daemon(raw: str) -> None:
     import on_tool  # same directory; reuses the loopback-only URL check and transport
 
+    agent = on_tool.parse_agent(sys.argv[1:])  # spec 027
+    if agent is None:
+        return
     url = on_tool.decide_url()
     if url is None:
         return
     url = url[: -len("/decide")] + "/event"
     deadline = min(on_tool.hook_timeout_seconds(), EVENT_DEADLINE_S)
-    on_tool.call_daemon(url, raw.encode("utf-8"), deadline)
+    on_tool.call_daemon(url, raw.encode("utf-8"), deadline, {on_tool.AGENT_HEADER: agent})
 
 
 def main() -> None:

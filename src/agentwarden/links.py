@@ -252,15 +252,20 @@ def _plain_files(base: str, rel: Sequence[str]) -> list[str]:
 
 
 def protected_inodes(
-    cwd: str, roots: Sequence[str], is_secret_name: Callable[[str], bool]
+    cwd: str,
+    roots: Sequence[str],
+    is_secret_name: Callable[[str], bool],
+    config_paths: Sequence[Sequence[str]] = (),
 ) -> dict[tuple[int, int], tuple[str, str]]:
     """`(st_dev, st_ino)` -> `(path, kind)` for protected files; kind is `secret`,
-    `agentwarden` or `claude_settings`. Cached for a minute. Never raises.
+    `agentwarden`, `claude_settings` or `agent_config` (spec 027: a config file, or the files
+    directly in a config directory, under the project or home). Cached for a minute. Never
+    raises.
 
     Only `lstat`/`listdir` of fixed local paths; a link anywhere on the way is skipped, not
     followed."""
     home = os.path.expanduser("~")
-    key = (home, cwd, tuple(roots))
+    key = (home, cwd, tuple(roots), tuple(tuple(c) for c in config_paths))
     hit = _cache.get(key)
     if hit is not None and time.monotonic() - hit[0] < CACHE_TTL_S:
         return hit[1]
@@ -277,6 +282,10 @@ def protected_inodes(
     ]
     for name in ("settings.json", "settings.local.json"):
         wanted.append((cwd, [".claude", name], "claude_settings"))
+    for config in config_paths:
+        for base in dict.fromkeys([cwd, home]):
+            wanted.append((base, list(config), "agent_config"))
+            wanted += [(base, [*config, n], "agent_config") for n in _plain_files(base, config)]
     table: dict[tuple[int, int], tuple[str, str]] = {}
     for base, rel, kind in wanted:
         found = _plain(base, rel)
@@ -289,7 +298,11 @@ def protected_inodes(
 
 
 def hardlink_target(
-    path: str, cwd: str, roots: Sequence[str], is_secret_name: Callable[[str], bool]
+    path: str,
+    cwd: str,
+    roots: Sequence[str],
+    is_secret_name: Callable[[str], bool],
+    config_paths: Sequence[Sequence[str]] = (),
 ) -> tuple[str, str] | None:
     """`(protected path, kind)` when `path` is a hard link to a protected file, else None."""
     if is_unc(path):
@@ -300,7 +313,8 @@ def hardlink_target(
         return None
     if not stat.S_ISREG(st.st_mode) or st.st_nlink < 2 or not st.st_ino:
         return None
-    match = protected_inodes(cwd, roots, is_secret_name).get((st.st_dev, st.st_ino))
+    table = protected_inodes(cwd, roots, is_secret_name, config_paths)
+    match = table.get((st.st_dev, st.st_ino))
     if match is None or _key(match[0]) == _key(path):
         return None  # the protected file itself: the lexical rules already decided
     return match

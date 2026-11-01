@@ -8,14 +8,18 @@ exits 0 and prints at most one ASCII-only JSON document.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import math
 import os
+import re
 import sys
 import threading
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from types import ModuleType
 from urllib.parse import urlsplit
 
 DEFAULT_URL = "http://127.0.0.1:8765"
@@ -28,6 +32,11 @@ FAILSAFE_REASON = "AgentWarden unavailable"
 FAILSAFE_MESSAGE = (
     "\U0001f6e1 AgentWarden: unavailable, needs confirmation for this action (fail-safe)"
 )
+# Spec 027: `--agent <name>` picks the daemon's adapter and, if present, hooks/formats/<name>.py.
+DEFAULT_AGENT = "claude_code"
+AGENT_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+AGENT_HEADER = "X-AgentWarden-Agent"
+FORMATS_DIR = Path(__file__).resolve().parent / "formats"
 
 
 def _dump(obj: dict) -> str:
@@ -47,8 +56,52 @@ def _decision_output(decision: str, reason: str, system_message: str | None) -> 
     return _dump(out)
 
 
-def failsafe_output(notify: bool) -> str:
-    return _decision_output("ask", FAILSAFE_REASON, FAILSAFE_MESSAGE if notify else None)
+def parse_agent(argv: Sequence[str]) -> str | None:
+    """The agent named by `--agent NAME` / `--agent=NAME` (default Claude Code); `None` if the
+    arguments are anything else."""
+    if not argv:
+        return DEFAULT_AGENT
+    if len(argv) == 1 and argv[0].startswith("--agent="):
+        name = argv[0][len("--agent=") :]
+    elif len(argv) == 2 and argv[0] == "--agent":
+        name = argv[1]
+    else:
+        return None
+    return name if AGENT_RE.match(name) else None
+
+
+def load_formatter(agent: str) -> ModuleType | None:
+    """hooks/formats/<agent>.py, or `None` when the agent uses the Claude Code schema.
+
+    Raises when the module exists but cannot be loaded."""
+    if not AGENT_RE.match(agent):
+        raise ValueError("malformed agent name")
+    path = FORMATS_DIR / f"{agent}.py"
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location(f"agentwarden_format_{agent}", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _render(formatter: ModuleType | None, decision: str, reason: str, message: str | None) -> str:
+    if formatter is None:
+        return _decision_output(decision, reason, message)
+    out = formatter.decision_output(decision, reason, message)
+    if not isinstance(out, str):
+        raise TypeError("formatter returned a non-string")
+    return out
+
+
+def failsafe_output(notify: bool, formatter: ModuleType | None = None) -> str:
+    message = FAILSAFE_MESSAGE if notify else None
+    try:
+        return _render(formatter, "ask", FAILSAFE_REASON, message)
+    except Exception:
+        return _decision_output("ask", FAILSAFE_REASON, message)
 
 
 def parse_verdict(status: int, body: bytes) -> dict | None:
@@ -71,13 +124,13 @@ def parse_verdict(status: int, body: bytes) -> dict | None:
     return data
 
 
-def build_output(verdict: dict, allow_mode: str) -> str:
+def build_output(verdict: dict, allow_mode: str, formatter: ModuleType | None = None) -> str:
     decision = verdict["decision"]
     if decision == "allow":
         if allow_mode != "explicit":
             return ""
-        return _decision_output("allow", verdict["reason"], None)
-    return _decision_output(decision, verdict["reason"], verdict.get("system_message"))
+        return _render(formatter, "allow", verdict["reason"], None)
+    return _render(formatter, decision, verdict["reason"], verdict.get("system_message"))
 
 
 def decide_url(env: Mapping[str, str] | None = None) -> str | None:
@@ -118,14 +171,15 @@ def _opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
-def call_daemon(url: str, body: bytes, deadline_s: float) -> tuple[int, bytes] | None:
+def call_daemon(
+    url: str, body: bytes, deadline_s: float, headers: Mapping[str, str] | None = None
+) -> tuple[int, bytes] | None:
     """POST `body` to `url`; `None` on any error or if the whole call exceeds `deadline_s`."""
     result: list[tuple[int, bytes]] = []
+    all_headers = {"Content-Type": "application/json", **(headers or {})}
 
     def worker() -> None:
-        request = urllib.request.Request(
-            url, data=body, method="POST", headers={"Content-Type": "application/json"}
-        )
+        request = urllib.request.Request(url, data=body, method="POST", headers=all_headers)
         try:
             with _opener().open(request, timeout=deadline_s) as response:
                 result.append((response.status, response.read(MAX_BODY_BYTES + 1)))
@@ -152,28 +206,35 @@ def _record(event: dict) -> None:
         pass
 
 
-def run(stdin_bytes: bytes, env: Mapping[str, str]) -> str:
+def run(stdin_bytes: bytes, env: Mapping[str, str], agent: str | None = DEFAULT_AGENT) -> str:
     """The whole hook pipeline. Never raises; returns what to print."""
     notify = True
     try:
         notify = env.get("WARDEN_NOTIFY", "").lower() != "off"
+        if agent is None or not AGENT_RE.match(agent):
+            return failsafe_output(notify)
+        try:
+            formatter = load_formatter(agent)
+        except Exception:
+            return failsafe_output(notify)
         try:
             event = json.loads(stdin_bytes.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
-            return failsafe_output(notify)
+            return failsafe_output(notify, formatter)
         if not isinstance(event, dict):
-            return failsafe_output(notify)
+            return failsafe_output(notify, formatter)
         _record(event)
         url = decide_url(env)
         if url is None:
-            return failsafe_output(notify)
-        response = call_daemon(url, stdin_bytes, hook_timeout_seconds(env))
+            return failsafe_output(notify, formatter)
+        headers = {AGENT_HEADER: agent}
+        response = call_daemon(url, stdin_bytes, hook_timeout_seconds(env), headers)
         if response is None:
-            return failsafe_output(notify)
+            return failsafe_output(notify, formatter)
         verdict = parse_verdict(*response)
         if verdict is None:
-            return failsafe_output(notify)
-        return build_output(verdict, env.get("WARDEN_ALLOW", "passthrough"))
+            return failsafe_output(notify, formatter)
+        return build_output(verdict, env.get("WARDEN_ALLOW", "passthrough"), formatter)
     except Exception:
         return failsafe_output(notify)
 
@@ -183,7 +244,7 @@ def main() -> None:
         stdin_bytes = sys.stdin.buffer.read()
     except Exception:
         stdin_bytes = b""
-    output = run(stdin_bytes, os.environ)
+    output = run(stdin_bytes, os.environ, parse_agent(sys.argv[1:]))
     if output:
         sys.stdout.write(output)
     sys.stdout.flush()

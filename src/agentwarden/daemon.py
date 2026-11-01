@@ -21,10 +21,10 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from agentwarden import agents, scanner
 from agentwarden import policy as policy_module
-from agentwarden import scanner
 from agentwarden.decide import decide, with_system_message
 from agentwarden.judge import SessionContext
 from agentwarden.models import PromptEvent, ReadEvent, ToolEvent, Verdict
@@ -35,6 +35,27 @@ from agentwarden.scanner import ScanResult
 from agentwarden.store import Store
 
 logger = logging.getLogger("agentwarden.daemon")
+
+
+AGENT_HEADER = "x-agentwarden-agent"
+
+
+def normalized(request: Request, kind: agents.EventKind, body: object) -> object:
+    """The payload in the Claude Code shape, per the agent the hook named (spec 027).
+
+    Raises `AdapterError` for an unknown agent or an ambiguous payload.
+    """
+    adapter = agents.get_adapter(request.headers.get(AGENT_HEADER))
+    if not isinstance(body, dict):
+        return body  # the model validation rejects it
+    return adapter.normalize(kind, body)
+
+
+async def _json_body(request: Request) -> object:
+    try:
+        return await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="AgentWarden: invalid JSON") from None
 
 
 def failsafe(reason: str) -> Verdict:
@@ -182,8 +203,18 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/event", status_code=204)
-    async def event(payload: PromptEvent, request: Request) -> Response:
+    async def event(request: Request) -> Response:
         store: Store = request.app.state.store
+        body = await _json_body(request)
+        try:
+            body = normalized(request, "prompt", body)
+        except agents.AdapterError:
+            logger.warning("rejected /event: unknown agent or untranslatable payload")
+            raise HTTPException(status_code=400, detail="AgentWarden: unknown agent") from None
+        try:
+            payload = PromptEvent.model_validate(body)
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="AgentWarden: invalid event") from None
         try:
             store.add_prompt(payload)
         except Exception:
@@ -205,7 +236,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             return failsafe("AgentWarden: invalid event")
 
         try:
-            tool_event = ToolEvent.model_validate(body)
+            tool_event = ToolEvent.model_validate(normalized(request, "tool", body))
         except Exception:
             logger.exception("Invalid ToolEvent payload for /decide")
             return failsafe("AgentWarden: invalid event")
@@ -242,9 +273,19 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return verdict
 
     @app.post("/scan")
-    async def scan_endpoint(payload: ReadEvent, request: Request) -> dict[str, str | None]:
+    async def scan_endpoint(request: Request) -> dict[str, str | None]:
         """Scan content the agent just read; `{"warning": null}` unless it was flagged."""
         store: Store = request.app.state.store
+        body = await _json_body(request)
+        try:
+            body = normalized(request, "read", body)
+        except agents.AdapterError:
+            logger.warning("not scanned: unknown agent or untranslatable payload")
+            return {"warning": None}
+        try:
+            payload = ReadEvent.model_validate(body)
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="AgentWarden: invalid event") from None
         source = scan_source(payload)
         slots: asyncio.Semaphore = request.app.state.scan_slots
         if slots.locked():

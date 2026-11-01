@@ -23,7 +23,7 @@ import time
 from collections.abc import Sequence
 from urllib.parse import urlparse
 
-from agentwarden import links
+from agentwarden import agents, links
 from agentwarden.models import ToolEvent, Verdict
 
 logger = logging.getLogger(__name__)
@@ -443,6 +443,87 @@ def _hooks_rule(event: ToolEvent) -> Verdict | None:
 
 
 # ---------------------------------------------------------------------------
+# Stage 1e2 -- self-protection: every registered agent's hook config (spec 027)
+# ---------------------------------------------------------------------------
+
+_WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+# A parent of the config matches as the whole directory (`.github`, `.github/`) or a wildcard
+# under it (`.github/hook*`) -- not a sibling path like `.github/workflows/ci.yml`.
+_PARENT_TAIL = r"(?:[/\\]*(?=$|[\s'\";|&)])|[/\\]+[^\s'\"/\\]*[*?\[])"
+_CONFIG_TAIL = r"(?![\w.-])"
+
+
+def _component_re(parts: tuple[str, ...], *, parent: bool) -> re.Pattern[str]:
+    body = r"[/\\]+".join(re.escape(p) for p in parts)
+    tail = _PARENT_TAIL if parent else _CONFIG_TAIL
+    return re.compile(rf"(?<![\w.-]){body}{tail}", re.IGNORECASE)
+
+
+_config_res: dict[tuple[tuple[str, ...], bool], re.Pattern[str]] = {}
+
+
+def _config_re(parts: tuple[str, ...], *, parent: bool = False) -> re.Pattern[str]:
+    pattern = _config_res.get((parts, parent))
+    if pattern is None:
+        pattern = _config_res[(parts, parent)] = _component_re(parts, parent=parent)
+    return pattern
+
+
+def _is_agent_config_path(raw_path: str, cwd: str) -> bool:
+    parts = _path_parts(_normalize_full(raw_path, cwd))
+    for config in agents.all_config_paths():
+        n = len(config)
+        if any(tuple(parts[i : i + n]) == config for i in range(len(parts) - n + 1)):
+            return True
+    return False
+
+
+def _shell_mentions_agent_config(command: str) -> bool:
+    remove = bool(_HOOKS_REMOVE_VERBS_RE.search(command))
+    for config in agents.all_config_paths():
+        if _config_re(config).search(command):
+            return True
+        # `rm -rf .github` / `mv .muse x` remove the config with its parent directory.
+        if remove and any(
+            _config_re(config[:i], parent=True).search(command) for i in range(1, len(config))
+        ):
+            return True
+    return False
+
+
+def _agent_config_rule(event: ToolEvent) -> Verdict | None:
+    try:
+        tool = event.tool_name
+        if tool in ("Bash", "PowerShell"):
+            command = _get_str(event.tool_input, "command")
+            if command and _shell_mentions_agent_config(command):
+                return _deny(
+                    "touching a coding agent's hook config is not allowed", ALT_SELF_PROTECTION
+                )
+            return None
+        if tool in _WRITE_TOOLS:
+            for field in _collect_path_fields(event) or []:
+                if _is_agent_config_path(field, event.cwd):
+                    return _deny(
+                        "editing a coding agent's hook config is not allowed", ALT_SELF_PROTECTION
+                    )
+        return None
+    except Exception:
+        logger.exception("agent config rule failed")
+        return _ask("could not check the action against the agents' hook configs")
+
+
+def _unknown_agent_tool_rule(event: ToolEvent) -> Verdict | None:
+    """A foreign tool no adapter maps (`<agent>:<tool>`): its meaning is unknown, so `ask`."""
+    agent, sep, tool = event.tool_name.partition(":")
+    if not sep:
+        return None
+    return _ask(f"unknown {agent} tool {tool}; confirm before running it")
+
+
+# ---------------------------------------------------------------------------
 # Stage 1f -- self-protection: daemon call and kill
 # ---------------------------------------------------------------------------
 
@@ -529,7 +610,9 @@ def _hard_deny_stage(event: ToolEvent) -> Verdict | None:
         _agentwarden_rule,
         _claude_settings_rule,
         _hooks_rule,
+        _agent_config_rule,
         _daemon_protection_rule,
+        _unknown_agent_tool_rule,
     ):
         verdict = rule(event)
         if verdict is not None:
@@ -639,7 +722,7 @@ def _safe_read_rule(event: ToolEvent, roots: Sequence[str] = ()) -> Verdict | No
         path = _get_str(ti, "file_path")
         if path is None:
             return None
-        if _is_claude_settings_path(path):
+        if _is_claude_settings_path(path) or _is_agent_config_path(path, event.cwd):
             return None
         if is_inside_roots(path, event.cwd, roots):
             return _allow("reading a file inside the project")
@@ -956,15 +1039,19 @@ def _target_verdict(tool: str, lexical: str, target: str, cwd: str) -> Verdict |
         return _via_link(lexical, target, "AgentWarden's .claude settings; editing is not allowed")
     if _is_project_hooks_path(target, cwd):
         return _via_link(lexical, target, "AgentWarden's hooks; touching them is not allowed")
+    if _is_agent_config_path(target, cwd) and tool not in ("Read", "Grep", "Glob"):
+        return _via_link(lexical, target, "a coding agent's hook config; editing is not allowed")
     return None
 
 
 def _hardlink_verdict(tool: str, lexical: str, protected: str, kind: str) -> Verdict | None:
-    if kind == "claude_settings" and tool in ("Read", "Grep", "Glob"):
+    if kind in ("claude_settings", "agent_config") and tool in ("Read", "Grep", "Glob"):
         return None
     if kind == "secret" and tool == "Write":
         return _ask(f"{lexical} is a hard link to {protected}: writing it needs confirmation")
-    detail = "a secret file" if kind == "secret" else "an AgentWarden file"
+    detail = {"secret": "a secret file", "agent_config": "a coding agent's hook config"}.get(
+        kind, "an AgentWarden file"
+    )
     return _deny(
         f"{lexical} is a hard link to {protected}, {detail}; touching it is not allowed",
         ALT_SECRETS if kind == "secret" else ALT_SELF_PROTECTION,
@@ -1043,7 +1130,9 @@ def _resolve_paths(event: ToolEvent, roots: Sequence[str]) -> tuple[Verdict | No
                 left = _left_roots_verdict(event, lexical, word, res.resolved)
                 boundary = _stricter(boundary, left)
                 continue
-        match = links.hardlink_target(res.resolved, cwd, abs_roots, _is_secret_path)
+        match = links.hardlink_target(
+            res.resolved, cwd, abs_roots, _is_secret_path, agents.all_config_paths()
+        )
         if match is not None:
             hard = _stricter(hard, _hardlink_verdict(tool, lexical, *match))
     return hard, boundary

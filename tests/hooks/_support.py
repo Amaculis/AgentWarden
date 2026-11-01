@@ -12,6 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ON_TOOL = REPO_ROOT / "hooks" / "on_tool.py"
 ON_PROMPT = REPO_ROOT / "hooks" / "on_prompt.py"
+ON_READ = REPO_ROOT / "hooks" / "on_read.py"
 
 # A closed loopback port: nothing listens here, so any attempt to connect
 # fails fast with "connection refused". Used as the default WARDEN_URL for
@@ -48,6 +49,7 @@ def run_hook(
     home: Path,
     env: Mapping[str, str] | None = None,
     timeout: float = 10,
+    args: list[str] | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a hook script as a real subprocess with AGENTWARDEN_HOME set to `home`.
 
@@ -62,7 +64,7 @@ def run_hook(
     if env:
         merged.update(env)
     return subprocess.run(
-        [sys.executable, str(script)],
+        [sys.executable, str(script), *(args or [])],
         input=stdin_text,
         capture_output=True,
         text=True,
