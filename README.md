@@ -152,6 +152,8 @@ The policy can never weaken built-in hard denies. Secrets and self-protection ru
 
 Set `mode: read_only` to look at untrusted code: only `Read`, `Glob` and `Grep` inside the project run without a question, everything else (edits, shell commands, network, MCP tools) asks, and the `allow_*` lists are ignored. No model is called in this mode.
 
+The project folder is a boundary. Searching or listing outside it (`Glob`, `Grep`, `ls`, `find`, `Get-ChildItem`) is denied; reading, editing or a shell path outside it asks, and the judge can only make that stricter. To widen the boundary, add absolute folders to `extra_roots` in the policy file (permanent), or press **Allow folder for this session** on the row in the dashboard (until the session ends). Secrets and AgentWarden's own files stay blocked inside every allowed folder.
+
 ## Project layout
 
 - `hooks/` — Claude Code hook scripts; forward events to the daemon, fail closed to `ask`.

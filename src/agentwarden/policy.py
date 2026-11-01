@@ -10,26 +10,60 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import posixpath
 import re
-import shlex
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 from agentwarden.models import ToolEvent, Verdict
-from agentwarden.rules import _collect_path_fields, _get_str, _is_inside_project, _normalize_full
+from agentwarden.rules import (
+    _collect_path_fields,
+    _expand_home,
+    _get_str,
+    _is_abs_path,
+    _is_inside_project,
+    _normalize_full,
+    is_inside_roots,
+    path_token,
+    split_command,
+)
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_RELATIVE_PATH = Path(".agentwarden") / "policy.yaml"
 
+MAX_ROOT_CHARS = 300
+_FS_ROOT_RE = re.compile(r"^(?:[A-Za-z]:)?/*$")
+_ROOT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def valid_root(path: object) -> str | None:
+    """A directory usable as an extra root (spec 025), or `None`.
+
+    Absolute after `~` expansion, one line, at most 300 characters, not a filesystem root.
+    """
+    if not isinstance(path, str):
+        return None
+    path = path.strip()
+    if not path or len(path) > MAX_ROOT_CHARS or _ROOT_CONTROL_RE.search(path):
+        return None
+    expanded = _expand_home(path).replace("\\", "/")
+    if not _is_abs_path(expanded) or "$" in expanded or "%" in expanded:
+        return None
+    if _FS_ROOT_RE.match(posixpath.normpath(expanded)):
+        return None
+    return path
+
 
 class Policy(BaseModel):
     version: int = 1
     mode: Literal["normal", "read_only"] = "normal"  # spec 024
+    extra_roots: list[str] = []  # spec 025: absolute directories that count as the project
     deny_paths: list[str] = []
     ask_paths: list[str] = []
     allow_paths: list[str] = []
@@ -37,6 +71,18 @@ class Policy(BaseModel):
     ask_commands: list[str] = []
     allow_commands: list[str] = []
     allow_domains: list[str] = []
+
+    @field_validator("extra_roots")
+    @classmethod
+    def _keep_valid_roots(cls, roots: list[str]) -> list[str]:
+        kept = [r for r in (valid_root(root) for root in roots) if r is not None]
+        if len(kept) != len(roots):
+            logger.warning(
+                "AgentWarden: dropped %d extra_roots entries (relative, filesystem root or "
+                "too long)",
+                len(roots) - len(kept),
+            )
+        return kept
 
 
 _DEFAULT_POLICY = Policy()
@@ -132,33 +178,9 @@ def _path_matches_glob(raw_path: str, cwd: str, glob: str) -> bool:
     return fnmatch.fnmatch(rel, pattern + "/*")
 
 
-_EXTENSION_RE = re.compile(r"\.[A-Za-z0-9_]+$")
-
-
-def _split_command(command: str) -> list[str]:
-    try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
-        lexer.escape = ""  # keep backslashes: Windows paths
-        return list(lexer)
-    except ValueError:
-        return [tok.strip("\"'") for tok in command.split()]
-
-
 def _command_path_tokens(command: str) -> list[str]:
     """Path-like tokens of a shell command (spec 008). Bare words are not paths."""
-    paths = []
-    for tok in _split_command(command):
-        if tok.startswith("-"):
-            if "=" not in tok:
-                continue
-            tok = tok.split("=", 1)[1]
-        tok = tok.strip("\"'")
-        if not tok or any(c.isspace() for c in tok) or "://" in tok:
-            continue
-        if "/" in tok or "\\" in tok or _EXTENSION_RE.search(tok):
-            paths.append(tok)
-    return paths
+    return [p for p in (path_token(tok) for tok in split_command(command)) if p is not None]
 
 
 def _any_path_matches(event: ToolEvent, globs: list[str], *, include_command: bool = False) -> bool:
@@ -306,8 +328,8 @@ def append_rule(path: Path | str, kind: str, value: str) -> bool:
 _READ_TOOLS = ("Read", "Glob", "Grep")
 
 
-def _is_project_read(event: ToolEvent) -> bool:
-    """A Read/Glob/Grep call whose every path is provably inside the project (spec 024)."""
+def _is_project_read(event: ToolEvent, roots: Sequence[str] = ()) -> bool:
+    """A Read/Glob/Grep call whose every path is provably inside the roots (spec 024/025)."""
     if event.tool_name not in _READ_TOOLS:
         return False
     for key in ("file_path", "path"):
@@ -317,29 +339,34 @@ def _is_project_read(event: ToolEvent) -> bool:
     fields = _collect_path_fields(event) or []
     if event.tool_name == "Read" and not fields:
         return False
-    return all(_is_inside_project(field, event.cwd) for field in fields)
+    return all(is_inside_roots(field, event.cwd, roots or (event.cwd,)) for field in fields)
 
 
-def _read_only_verdict(event: ToolEvent) -> Verdict:
-    if _is_project_read(event):
+def _read_only_verdict(event: ToolEvent, roots: Sequence[str] = ()) -> Verdict:
+    if _is_project_read(event, roots):
         return _allow("read-only profile: reading inside the project")
     if event.tool_name in _READ_TOOLS:
         return _ask("read-only profile: this read is not provably inside the project")
     return _ask(f"read-only profile: {event.tool_name} is not a read tool")
 
 
-def match(policy: Policy, event: ToolEvent) -> Verdict | None:
-    """Match an event against the policy. Precedence: deny > ask > allow."""
+def match_deny(policy: Policy, event: ToolEvent) -> Verdict | None:
+    """The policy's deny lists only (spec 025 runs the boundary ask between deny and the rest)."""
     if _any_path_matches(event, policy.deny_paths, include_command=True) or _any_command_matches(
         event, policy.deny_commands
     ):
         return _deny("this path or command is denied by policy")
+    return None
+
+
+def match_rest(policy: Policy, event: ToolEvent, *, roots: Sequence[str] = ()) -> Verdict | None:
+    """Ask lists, the read-only profile, then allow lists. `roots` widen read-only reads."""
     if _any_path_matches(event, policy.ask_paths, include_command=True) or _any_command_matches(
         event, policy.ask_commands
     ):
         return _ask("this path or command needs confirmation by policy")
     if policy.mode == "read_only":  # allow_* lists are ignored in this mode
-        return _read_only_verdict(event)
+        return _read_only_verdict(event, roots)
     if (
         _any_path_matches(event, policy.allow_paths)
         or _any_command_matches(event, policy.allow_commands, exact_tail=True)
@@ -347,3 +374,8 @@ def match(policy: Policy, event: ToolEvent) -> Verdict | None:
     ):
         return _allow("this path, command or domain is allowed by policy")
     return None
+
+
+def match(policy: Policy, event: ToolEvent) -> Verdict | None:
+    """Match an event against the policy. Precedence: deny > ask > allow."""
+    return match_deny(policy, event) or match_rest(policy, event)

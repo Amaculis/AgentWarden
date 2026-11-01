@@ -43,6 +43,15 @@ CREATE TABLE IF NOT EXISTS taints (
     UNIQUE (session_id, source)
 );
 
+CREATE TABLE IF NOT EXISTS session_roots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    norm TEXT NOT NULL,
+    UNIQUE (session_id, norm)
+);
+
 CREATE TABLE IF NOT EXISTS decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL,
@@ -68,6 +77,7 @@ _ADDED_DECISION_COLUMNS = {
     "escalated": "INTEGER",
     "local_decision": "TEXT",
     "safer_alternative": "TEXT",
+    "grant_dir": "TEXT",
 }
 
 
@@ -120,8 +130,9 @@ class Store:
                 INSERT INTO decisions (
                     created_at, session_id, prompt_id, tool_use_id, tool_name,
                     tool_input_json, cwd, decision, reason, risk, source, latency_ms,
-                    confidence, decided_by, escalated, local_decision, safer_alternative
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    confidence, decided_by, escalated, local_decision, safer_alternative,
+                    grant_dir
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     _now(),
@@ -141,6 +152,7 @@ class Store:
                     int(verdict.escalated),
                     verdict.local_decision,
                     verdict.safer_alternative,
+                    verdict.grant_dir,
                 ),
             )
             conn.commit()
@@ -255,6 +267,36 @@ class Store:
             conn.commit()
         finally:
             conn.close()
+
+    def add_session_root(self, session_id: str, path: str) -> bool:
+        """Grant `path` to the session (spec 025); `False` if already granted.
+
+        Deduplicated by normalised path; the first spelling is kept.
+        """
+        norm = path.strip().replace("\\", "/").rstrip("/").lower()
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO session_roots (created_at, session_id, path, norm) "
+                "VALUES (?, ?, ?, ?)",
+                (_now(), session_id, path.strip(), norm),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+        finally:
+            conn.close()
+
+    def session_roots(self, session_id: str) -> list[str]:
+        """Directories granted to the session, in grant order."""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT path FROM session_roots WHERE session_id = ? ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [row["path"] for row in rows]
 
     def session_taints(self, session_id: str) -> list[str]:
         """Distinct flagged sources of the session, in first-flagged order."""

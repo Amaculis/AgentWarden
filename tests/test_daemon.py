@@ -298,3 +298,96 @@ def test_context_failure_keeps_rules_deny(tmp_path, monkeypatch):
         response = client.post("/decide", json=event)
     assert response.status_code == 200
     assert response.json()["decision"] == "deny"
+
+
+# ---------------------------------------------------------------------------
+# spec 025: session directory grants (POST/GET /session/roots, /decide uses them)
+# ---------------------------------------------------------------------------
+
+
+def test_session_roots_requires_token(tmp_path):
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        body = {"session_id": "s1", "path": "D:\\shared"}
+        no_token = client.post("/session/roots", json=body)
+        assert no_token.status_code == 403
+
+        wrong_token = client.post("/session/roots", json=body, headers={"X-Warden-Token": "guess"})
+        assert wrong_token.status_code == 403
+
+        listing = client.get("/session/roots", params={"session_id": "s1"})
+        assert listing.status_code == 200
+        assert listing.json() == {"roots": []}
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    ["relative/dir", "/", "C:\\", "x" * 301, "two\nlines"],
+)
+def test_session_roots_rejects_invalid_path(tmp_path, bad_path):
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        headers = {"X-Warden-Token": app.state.ui_token}
+        response = client.post(
+            "/session/roots",
+            json={"session_id": "s1", "path": bad_path},
+            headers=headers,
+        )
+        assert response.status_code == 400
+
+        listing = client.get("/session/roots", params={"session_id": "s1"})
+        assert listing.json() == {"roots": []}
+
+
+def test_decide_uses_session_roots(tmp_path):
+    app = _make_app(tmp_path)
+    session_id = "session-roots-1"
+    with TestClient(app) as client:
+        headers = {"X-Warden-Token": app.state.ui_token}
+        shared = "D:\\shared"
+
+        granted = client.post(
+            "/session/roots",
+            json={"session_id": session_id, "path": shared},
+            headers=headers,
+        )
+        assert granted.status_code == 200
+        assert granted.json() == {"ok": True, "added": True}
+
+        listing = client.get("/session/roots", params={"session_id": session_id})
+        assert listing.json() == {"roots": [shared]}
+
+        event = {
+            **BASH_PRE_TOOL_USE,
+            "session_id": session_id,
+            "tool_name": "Read",
+            "tool_input": {"file_path": "D:\\shared\\notes.txt"},
+        }
+        response = client.post("/decide", json=event)
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "allow"
+
+
+def test_decide_store_failure_no_grants(tmp_path, monkeypatch):
+    from agentwarden.store import Store
+
+    def failing_session_roots(self, session_id):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(Store, "session_roots", failing_session_roots)
+
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        event = {
+            **BASH_PRE_TOOL_USE,
+            "tool_name": "Read",
+            "tool_input": {"file_path": "D:\\shared\\notes.txt"},
+        }
+        response = client.post("/decide", json=event)
+
+    # The store is unreachable so no session grants widen the boundary: the
+    # daemon must still answer (fail-closed), and never `allow` an outside path.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision"] != "allow"

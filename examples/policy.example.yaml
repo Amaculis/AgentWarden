@@ -8,6 +8,11 @@ version: 1
 # (logged once) and run in normal mode.
 mode: normal
 
+# Absolute folders outside the project the agent may use without asking (searches included).
+# Relative paths and filesystem roots are ignored. For one session only, use the dashboard's
+# "Allow folder for this session" button instead.
+extra_roots: []
+
 # Paths are globs relative to the project root.
 deny_paths: ["secrets/", "*.pem", "*.key"]
 ask_paths: ["migrations/", "infra/"]

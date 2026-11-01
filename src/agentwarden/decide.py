@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from collections.abc import Sequence
 
 from agentwarden.cascade import decide_with_cascade
 from agentwarden.judge import SessionContext, env_float, judge
@@ -143,16 +144,25 @@ def decide(
     context: SessionContext | None = None,
     provider: Provider | None = None,
     cascade: CascadeProviders | None = None,
+    *,
+    extra_roots: Sequence[str] = (),
 ) -> Verdict:
     """Decide what to do with a tool event.
+
+    `extra_roots`: directories granted to this session (spec 025); they widen the project
+    boundary for the rules, never the hard denies.
 
     Rules first; an unsettled action goes to the cascade (`WARDEN_JUDGE=cascade` or
     `cascade=`) or a single judge provider (`WARDEN_JUDGE=<name>` or `provider=`),
     otherwise it is `ask`.
     """
-    verdict = evaluate(event)
+    verdict = evaluate(event, extra_roots)
     if verdict is not None:
         verdict = verdict.model_copy(update={"decided_by": "rules"})
+        if verdict.consult_judge:  # boundary ask: the judge may only tighten it
+            model = _model_verdict(event, context, provider, cascade)
+            if model is not None and model.decision == "deny":
+                verdict = model
     else:
         verdict = _model_verdict(event, context, provider, cascade)
     if verdict is None:

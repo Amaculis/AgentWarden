@@ -64,6 +64,10 @@ class Verdict(BaseModel):
     decided_by: Literal["rules", "local", "spark"] | None = None
     escalated: bool = False
     local_decision: DecisionValue | None = None
+    grant_dir: str | None = None  # spec 025: directory the user could grant for the session
+    # Spec 025: a rules `ask` that is a ceiling, not a final answer -- the judge still runs and
+    # may tighten it to `deny`; its `allow` stays `ask`.
+    consult_judge: bool = False
 
 
 def failsafe(reason: str) -> Verdict:

@@ -67,3 +67,39 @@ def test_store_session_prompts(tmp_path):
 
     empty = store.session_prompts("unknown-session")
     assert empty == []
+
+
+# ---------------------------------------------------------------------------
+# spec 025: session directory grants
+# ---------------------------------------------------------------------------
+
+
+def test_session_roots_add_list_isolated_per_session(tmp_path):
+    store = Store(tmp_path / "audit.db")
+
+    assert store.add_session_root("s1", "D:\\shared") is True
+    assert store.add_session_root("s1", "D:\\shared") is False  # exact duplicate
+    assert store.add_session_root("s1", "D:/shared/") is False  # normalised duplicate
+    assert store.add_session_root("s1", "D:\\other") is True
+    assert store.add_session_root("s2", "D:\\different") is True
+
+    assert store.session_roots("s1") == ["D:\\shared", "D:\\other"]
+    assert store.session_roots("s2") == ["D:\\different"]
+    assert store.session_roots("unknown-session") == []
+
+
+def test_decision_grant_dir_round_trips(tmp_path):
+    store = Store(tmp_path / "audit.db")
+
+    event = _tool_event(READ_PRE_TOOL_USE, session_id="s3")
+    verdict = Verdict(
+        decision="ask",
+        reason="AgentWarden: Read outside the project needs confirmation.",
+        risk=None,
+        source="rules",
+        grant_dir="C:\\Users\\a",
+    )
+    store.add_decision(event, verdict, latency_ms=1)
+
+    rows = store.recent_decisions(limit=1, session_id="s3")
+    assert rows[0]["grant_dir"] == "C:\\Users\\a"

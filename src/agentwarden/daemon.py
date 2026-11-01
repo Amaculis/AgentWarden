@@ -87,6 +87,17 @@ class RuleRequest(BaseModel):
     value: str
 
 
+class SessionRootRequest(BaseModel):
+    session_id: str
+    path: str
+
+
+def has_ui_token(request: Request) -> bool:
+    token = request.headers.get("x-warden-token", "")
+    expected: str = request.app.state.ui_token
+    return hmac.compare_digest(token.encode(), expected.encode())
+
+
 LOOPBACK_NAMES = {"127.0.0.1", "localhost", "[::1]", "::1"}
 
 
@@ -207,8 +218,15 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             logger.exception("session context unavailable")
             context = None
 
+        # Grants only widen the boundary; failing to read them must make it narrower, not fail.
         try:
-            verdict = await run_in_threadpool(decide, tool_event, context)
+            roots = store.session_roots(tool_event.session_id)
+        except Exception:
+            logger.exception("session roots unavailable")
+            roots = []
+
+        try:
+            verdict = await run_in_threadpool(decide, tool_event, context, extra_roots=roots)
         except Exception:
             logger.exception("decide() raised")
             verdict = failsafe("AgentWarden: internal error")
@@ -302,11 +320,34 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         loaded = policy_module.load_policy(cwd)
         return {"path": str(path), "exists": path.exists(), "policy": loaded.model_dump()}
 
+    @app.get("/session/roots")
+    async def get_session_roots(session_id: str, request: Request) -> dict:
+        store: Store = request.app.state.store
+        return {"roots": store.session_roots(session_id)}
+
+    @app.post("/session/roots")
+    async def add_session_root(body: SessionRootRequest, request: Request) -> dict:
+        """Grant a directory to one session (spec 025). Only the dashboard holds the token."""
+        if not has_ui_token(request):
+            logger.warning("session root refused: missing or wrong UI token")
+            raise HTTPException(status_code=403, detail="AgentWarden: UI token required")
+        path = policy_module.valid_root(body.path)
+        if path is None or not body.session_id.strip():
+            raise HTTPException(status_code=400, detail="AgentWarden: invalid directory")
+        store: Store = request.app.state.store
+        try:
+            added = store.add_session_root(body.session_id, path)
+        except Exception:
+            logger.exception("session root write failed")
+            raise HTTPException(
+                status_code=500, detail="AgentWarden: audit log unavailable"
+            ) from None
+        logger.warning("session root %s: %s", "granted" if added else "exists", path)
+        return {"ok": True, "added": added}
+
     @app.post("/policy/rules")
     async def add_rule(body: RuleRequest, request: Request) -> dict:
-        token = request.headers.get("x-warden-token", "")
-        expected: str = request.app.state.ui_token
-        if not hmac.compare_digest(token.encode(), expected.encode()):
+        if not has_ui_token(request):
             logger.warning("policy change refused: missing or wrong UI token")
             raise HTTPException(status_code=403, detail="AgentWarden: UI token required")
         if not valid_project_cwd(request.app.state.store, body.cwd):

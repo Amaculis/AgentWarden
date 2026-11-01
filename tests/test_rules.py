@@ -303,9 +303,12 @@ def test_delete_hooks_via_bash_is_denied(command):
 
 
 def test_hooks_outside_project_not_matched():
+    # spec 025: a Read outside the project is no longer unsettled (goes to the model) --
+    # the boundary stage now asks for confirmation deterministically.
     verdict = evaluate(_read("C:\\other\\hooks\\on_tool.py", cwd=PROJECT))
 
-    assert verdict is None
+    assert verdict is not None
+    assert verdict.decision == "ask"
 
 
 def test_unrelated_hooks_word_not_matched():
@@ -330,7 +333,10 @@ def test_claude_settings_write_denied(path):
 
     assert write_verdict is not None and write_verdict.decision == "deny"
     assert edit_verdict is not None and edit_verdict.decision == "deny"
-    assert read_verdict is None
+    if path.lower().startswith(("d:/proj", "d:\\proj")):
+        assert read_verdict is None
+    else:  # spec 025: a read outside the project asks
+        assert read_verdict is not None and read_verdict.decision == "ask"
 
 
 SHELL_CLAUDE_DIR_DENIED = [
@@ -495,9 +501,11 @@ def test_safe_reads_allowed():
     ["C:\\Windows\\win.ini", "/etc/hosts"],
 )
 def test_safe_reads_outside_project_not_allowed(path):
+    # spec 025: outside reads are no longer unsettled -- the boundary stage asks.
     verdict = evaluate(_read(path))
 
-    assert verdict is None
+    assert verdict is not None
+    assert verdict.decision == "ask"
 
 
 SAFE_COMMANDS_ALLOWED = [

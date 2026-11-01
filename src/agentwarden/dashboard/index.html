@@ -519,6 +519,40 @@ function buildConfirmCell(row) {
   return td;
 }
 
+// Spec 025: widen the project boundary for one session. Hard denies still apply inside.
+function makeGrantButton(row) {
+  const btn = document.createElement("button");
+  btn.textContent = "Allow folder for this session";
+  btn.title = row.grant_dir;
+  btn.disabled = !uiToken;
+  btn.addEventListener("click", async () => {
+    const ok = window.confirm(
+      "Let the agent use this folder until the session ends?\n\n" + row.grant_dir +
+      "\n\nSecrets and AgentWarden's own files stay blocked."
+    );
+    if (!ok) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch("/session/roots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Warden-Token": uiToken },
+        body: JSON.stringify({ session_id: row.session_id, path: row.grant_dir }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        btn.textContent = "Error: " + (body.detail || ("HTTP " + res.status));
+        btn.disabled = false;
+        return;
+      }
+      btn.textContent = body.added ? "Folder allowed" : "Already allowed";
+    } catch (e) {
+      btn.textContent = "Error: daemon not reachable";
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
 function renderFeed() {
   while (feedBody.firstChild) feedBody.removeChild(feedBody.firstChild);
   const rows = visibleRows();
@@ -571,6 +605,9 @@ function renderFeed() {
       });
       btnTd.appendChild(allowBtn);
       btnTd.appendChild(denyBtn);
+    }
+    if (row.grant_dir && row.session_id) {
+      btnTd.appendChild(makeGrantButton(row));
     }
     tr.appendChild(btnTd);
     tr.addEventListener("click", (ev) => {

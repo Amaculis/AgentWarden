@@ -3,7 +3,8 @@
 No model call, no filesystem access, no network. `evaluate()` runs:
 
 1. Hard denies (secrets, self-protection) -- nothing can weaken these.
-2. The user policy stage (empty hook point; the policy spec fills it in).
+2. Project boundary (spec 025) interleaved with the user policy (spec 004): boundary deny,
+   policy deny, boundary ask, the rest of the policy.
 3. Built-in defaults (destructive deny, risky ask, safe-read/safe-command allow).
 
 Returns the first verdict that matches, or `None` if nothing matched.
@@ -14,6 +15,8 @@ from __future__ import annotations
 import os
 import posixpath
 import re
+import shlex
+from collections.abc import Sequence
 from urllib.parse import urlparse
 
 from agentwarden.models import ToolEvent, Verdict
@@ -528,19 +531,6 @@ def _hard_deny_stage(event: ToolEvent) -> Verdict | None:
 
 
 # ---------------------------------------------------------------------------
-# Stage 2 -- user policy (not in this spec)
-# ---------------------------------------------------------------------------
-
-
-def _policy_stage(event: ToolEvent) -> Verdict | None:
-    """User policy from `.agentwarden/policy.yaml` (spec 004)."""
-    from agentwarden import policy as policy_module
-
-    loaded = policy_module.load_policy(event.cwd)
-    return policy_module.match(loaded, event)
-
-
-# ---------------------------------------------------------------------------
 # Stage 3a -- destructive deny
 # ---------------------------------------------------------------------------
 
@@ -634,16 +624,17 @@ def _ask_defaults_rule(command: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _safe_read_rule(event: ToolEvent) -> Verdict | None:
+def _safe_read_rule(event: ToolEvent, roots: Sequence[str] = ()) -> Verdict | None:
     tool = event.tool_name
     ti = event.tool_input
+    roots = roots or (event.cwd,)
     if tool == "Read":
         path = _get_str(ti, "file_path")
         if path is None:
             return None
         if _is_claude_settings_path(path):
             return None
-        if _is_inside_project(path, event.cwd):
+        if is_inside_roots(path, event.cwd, roots):
             return _allow("reading a file inside the project")
         return None
     # Grep / Glob
@@ -652,7 +643,7 @@ def _safe_read_rule(event: ToolEvent) -> Verdict | None:
     path = _get_str(ti, "path")
     if path is None:
         return None
-    if _is_inside_project(path, event.cwd):
+    if is_inside_roots(path, event.cwd, roots):
         return _allow("searching inside the project")
     return None
 
@@ -692,7 +683,7 @@ def _is_safe_command(command: str) -> bool:
     return any(low == prefix or low.startswith(prefix + " ") for prefix in _SAFE_COMMAND_PREFIXES)
 
 
-def _default_stage(event: ToolEvent) -> Verdict | None:
+def _default_stage(event: ToolEvent, roots: Sequence[str] = ()) -> Verdict | None:
     tool = event.tool_name
     if tool in ("Bash", "PowerShell"):
         command = _get_str(event.tool_input, "command")
@@ -708,8 +699,195 @@ def _default_stage(event: ToolEvent) -> Verdict | None:
             return _allow("read-only command with no shell metacharacters")
         return None
     if tool in ("Read", "Grep", "Glob"):
-        return _safe_read_rule(event)
+        return _safe_read_rule(event, roots)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Project boundary (spec 025): roots = project + policy extra_roots + session grants
+# ---------------------------------------------------------------------------
+
+_SHELL_TOOLS = ("Bash", "PowerShell")
+_FILE_TOOLS = ("Read", "Write", "Edit", "MultiEdit", "NotebookEdit")
+_SEARCH_TOOLS = ("Grep", "Glob")
+_LISTING_COMMANDS = frozenset(
+    {
+        "find", "ls", "dir", "tree", "du", "grep", "egrep", "rg", "ag", "fd", "locate",
+        "get-childitem", "gci", "select-string", "sls",
+    }
+)  # fmt: skip
+_DEVICE_TOKENS = frozenset(
+    {"/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "nul", "$null"}
+)
+_UNRESOLVED_VAR_RE = re.compile(r"\$|%[A-Za-z_]\w*%")
+_HOME_PREFIX_RE = re.compile(
+    r"^(?:\$HOME|\$\{HOME\}|%USERPROFILE%|\$env:USERPROFILE)(?=[/\\]|$)", re.IGNORECASE
+)
+_FLAG_VALUE_RE = re.compile(r"^-{1,2}[A-Za-z][\w-]*[=:]")
+_WILDCARD_RE = re.compile(r"[*?\[{]")
+_CHAIN_TOKENS = frozenset({"&&", "||", "|", ";", "&", "(", ")", "|&", ";;"})
+_PATH_EXTENSION_RE = re.compile(r"\.[A-Za-z0-9_]+$")
+
+
+def split_command(command: str) -> list[str]:
+    """Shell-ish tokens; operators come out as their own tokens (spec 008)."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.escape = ""  # keep backslashes: Windows paths
+        return list(lexer)
+    except ValueError:
+        return [tok.strip("\"'") for tok in command.split()]
+
+
+def path_token(tok: str) -> str | None:
+    """The path in a shell token, or `None` when it does not look like one."""
+    if tok.startswith("-"):
+        flag = _FLAG_VALUE_RE.match(tok)  # --out=x, PowerShell -Path:x
+        if flag is None:
+            return None
+        tok = tok[flag.end() :]
+    tok = tok.strip("\"'")
+    if not tok or any(c.isspace() for c in tok) or "://" in tok:
+        return None
+    if "/" in tok or "\\" in tok or _PATH_EXTENSION_RE.search(tok):
+        return tok
+    return None
+
+
+def command_path_tokens(command: str) -> list[tuple[str, str]]:
+    """`(command_word, path)` for each path argument; the command word itself is skipped."""
+    pairs: list[tuple[str, str]] = []
+    word: str | None = None
+    for tok in split_command(command.replace("\n", " ; ")):
+        if tok in _CHAIN_TOKENS:
+            word = None
+            continue
+        if word is None:
+            word = tok
+            continue
+        path = path_token(tok)
+        if path is not None:
+            pairs.append((word, path))
+    return pairs
+
+
+def _is_unresolved(path: str) -> bool:
+    """Any variable other than a leading home reference (the agent's shell may define it
+    differently from the daemon's environment), or a home reference the daemon can't expand."""
+    if _unresolved_home(_expand_home(path)):
+        return True
+    return bool(_UNRESOLVED_VAR_RE.search(_HOME_PREFIX_RE.sub("", path.strip(), count=1)))
+
+
+def _wildcard_escapes(path: str) -> bool:
+    """A `..` after the first wildcard component (`**/../../x`) can climb anywhere."""
+    parts = re.split(r"[/\\]", path)
+    first = next((i for i, part in enumerate(parts) if _WILDCARD_RE.search(part)), None)
+    return first is not None and ".." in parts[first:]
+
+
+def _literal_base(path: str) -> str:
+    """The part of `path` before its first wildcard (the whole path if it has none)."""
+    match = _WILDCARD_RE.search(path)
+    if match is None:
+        return path
+    return path[: match.start()].rstrip("/\\") or "."
+
+
+def is_inside_roots(path: str, cwd: str, roots: Sequence[str]) -> bool:
+    """`path` is equal to or under one of `roots` (lexical; unresolved variables never are).
+
+    Wildcards are judged by their literal prefix; a `..` after a wildcard is never inside.
+    """
+    if _is_unresolved(path) or _wildcard_escapes(path):
+        return False
+    full = _normalize_full(_literal_base(path), cwd)
+    for root in roots:
+        base = _normalize_full(root, cwd)
+        if full == base or full.startswith(base.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def _display_full(path: str, cwd: str) -> str:
+    """Absolute, normalised path in its original case (shown to the user, stored as grant)."""
+    p = _expand_home(path).replace("\\", "/")
+    if not _is_abs_path(p):
+        p = posixpath.join(cwd.replace("\\", "/"), p)
+    return posixpath.normpath(p)
+
+
+def _grant_dir(path: str, cwd: str, *, is_file: bool) -> str | None:
+    if _is_unresolved(path):
+        return None
+    full = _display_full(path, cwd)
+    return posixpath.dirname(full) if is_file else full
+
+
+def _grant_hint(grant: str | None) -> str:
+    if not grant:
+        return ""
+    return (
+        f"; to allow it, ask the user to grant {grant} for this session in the "
+        "AgentWarden dashboard"
+    )
+
+
+def _boundary_deny(what: str, path: str, grant: str | None) -> Verdict:
+    verdict = _deny(f"{what} outside the project ({path}) is not allowed{_grant_hint(grant)}")
+    return verdict.model_copy(update={"grant_dir": grant})
+
+
+def _boundary_ask(what: str, path: str, grant: str | None) -> Verdict:
+    verdict = _ask(f"{what} outside the project ({path}) needs confirmation{_grant_hint(grant)}")
+    return verdict.model_copy(update={"grant_dir": grant, "consult_judge": True})
+
+
+def _boundary_stage(event: ToolEvent, roots: Sequence[str]) -> Verdict | None:
+    tool, ti, cwd = event.tool_name, event.tool_input, event.cwd
+    if tool in _SEARCH_TOOLS:
+        keys = ("path", "pattern") if tool == "Glob" else ("path", "glob")
+        for key in keys:
+            value = _get_str(ti, key)
+            if value is None:
+                continue
+            if not is_inside_roots(value, cwd, roots):
+                grant = None if _wildcard_escapes(value) else _literal_base(value)
+                grant = _grant_dir(grant, cwd, is_file=False) if grant else None
+                return _boundary_deny("searching", value, grant)
+        return None
+    if tool in _FILE_TOOLS:
+        for path in _collect_path_fields(event) or []:
+            if not is_inside_roots(path, cwd, roots):
+                return _boundary_ask(tool, path, _grant_dir(path, cwd, is_file=True))
+        return None
+    if tool in _SHELL_TOOLS:
+        command = _get_str(ti, "command")
+        if command is None:
+            return None
+        first_ask: Verdict | None = None
+        for word, path in command_path_tokens(command):
+            if path.lower() in _DEVICE_TOKENS or is_inside_roots(path, cwd, roots):
+                continue
+            name = posixpath.basename(word.replace("\\", "/")).lower().removesuffix(".exe")
+            wildcard = _WILDCARD_RE.search(path) is not None
+            is_file = not wildcard and bool(_PATH_EXTENSION_RE.search(path))
+            grant = (
+                None
+                if _wildcard_escapes(path)
+                else _grant_dir(_literal_base(path), cwd, is_file=is_file)
+            )
+            if name in _LISTING_COMMANDS:
+                return _boundary_deny(f"listing or searching ({name})", path, grant)
+            if first_ask is None:
+                first_ask = _boundary_ask("a command path", path, grant)
+        return first_ask
+    return None
+
+
+def policy_roots(event: ToolEvent, policy_extra: Sequence[str], extra: Sequence[str]) -> list[str]:
+    return [event.cwd, *policy_extra, *extra]
 
 
 # ---------------------------------------------------------------------------
@@ -717,12 +895,29 @@ def _default_stage(event: ToolEvent) -> Verdict | None:
 # ---------------------------------------------------------------------------
 
 
-def evaluate(event: ToolEvent) -> Verdict | None:
-    """Run the rule stages in order; return the first verdict, or `None`."""
+def evaluate(event: ToolEvent, extra_roots: Sequence[str] = ()) -> Verdict | None:
+    """Run the rule stages in order; return the first verdict, or `None`.
+
+    hard denies -> boundary deny -> policy deny -> built-in default deny -> boundary ask ->
+    rest of policy -> defaults.
+    """
+    from agentwarden import policy as policy_module
+
     verdict = _hard_deny_stage(event)
     if verdict is not None:
         return verdict
-    verdict = _policy_stage(event)
+    loaded = policy_module.load_policy(event.cwd)
+    roots = policy_roots(event, loaded.extra_roots, extra_roots)
+    boundary = _boundary_stage(event, roots)
+    if boundary is not None and boundary.decision == "deny":
+        return boundary
+    verdict = policy_module.match_deny(loaded, event)
     if verdict is not None:
         return verdict
-    return _default_stage(event)
+    if boundary is not None:
+        default = _default_stage(event, roots)  # `rm -rf /` stays a deny, not a boundary ask
+        return default if default is not None and default.decision == "deny" else boundary
+    verdict = policy_module.match_rest(loaded, event, roots=roots)
+    if verdict is not None:
+        return verdict
+    return _default_stage(event, roots)

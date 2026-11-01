@@ -23,6 +23,12 @@ the project allowed, everything else `ask`, allow_* ignored, no model call. Idea
 obfuscation: "ignore previous", "as the reviewer", fake verdict JSON) so a local `allow` is never
 final for them; measure on `judge_attack`.
 
+Spec 025 (project boundary): search/listing outside the project → deny; file or shell path
+outside → ask that the judge may only tighten; `extra_roots` in policy and per-session grants
+(`POST /session/roots` with UI token, dashboard button "Allow folder for this session").
+Reviewer found `Glob **/../../x` → allow; fixed with tests. Dashboard button not checked in a
+real browser yet. Cascade not re-run: expect `benign-readsshconfig-240` allow → ask.
+
 Next (Sonnet): nothing queued; pick from "Waiting for the human" or the open problems.
 
 Waiting for the human:
