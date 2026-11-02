@@ -89,6 +89,10 @@ narrowing (delimiter inside a quoted remote spec) and the same quadratic shape i
 `_DOWNLOAD_PIPE_RE` / `_DISK_DESTROY_RE` (`"dd " * 30000` = 19 s) — both fixed. Open: `shlex` is
 quadratic on one huge token (800 KB → ~11 s per call, pre-existing; hook timeout → `ask`).
 
+Planned (backlog draft, needs the human's answers): `docs/specs/backlog/reason-in-system-message.md`
+— put the verdict reason into the visible 🛡 `systemMessage` (redacted, one line). Open questions
+are listed at the bottom of the draft; ask them when the human picks the task up.
+
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
    shape for Read/WebFetch still unverified.
