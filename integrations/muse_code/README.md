@@ -27,8 +27,24 @@ One session in `C:\tmp\muse-capture` with `hook_logger.py` (AgentWarden off) con
   not set `WARDEN_ALLOW_MODE=explicit` for Muse); `deny` needs a non-empty
   `permissionDecisionReason`; `hookSpecificOutput.hookEventName` is required.
 
-Still **not** checked live: AgentWarden switched on (that a `deny` blocks and an `ask` prompts),
-`write_file`, web and MCP tools, Linux/macOS tool names. The research below predates the
+## Live run with AgentWarden on (2026-11-02)
+
+Same folder, real hooks from `hooks.json`, daemon without a judge model:
+
+- `read_file README.md` → `Read` → `allow` (rules); Muse read the file.
+- `read_file .env` → `deny` (rules). Muse showed "Read .env — failed" with AgentWarden's reason
+  and safer alternative, did not retry, and told the user it could not check. **A `deny`
+  blocks in Muse Code.**
+- `powershell Get-ChildItem …` → `ask` (default, no judge). Muse reported "denied — approval
+  aborted"; whether it showed a confirmation first was not confirmed. Treat `ask` as possibly
+  a deny in Muse.
+- `submit_reminder_decision` → `allow` (rules, no model), 16 times, no prompts.
+- Prompts reached `/event` with `turn_id` as `prompt_id`; the action's id matched its prompt
+  (spec 035 binding works for Muse).
+- Muse's own model refused to read `.env` or edit `.muse/hooks.json` when asked directly, so
+  those requests never reached AgentWarden; asking to "check whether .env contains a key" did.
+
+Still **not** checked live: `write_file`, web and MCP tools, Linux/macOS tool names. The research below predates the
 capture; where it disagrees, the capture wins.
 
 ## Sources (fetched/searched 2026-11-01)

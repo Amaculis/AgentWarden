@@ -108,8 +108,10 @@ the daemon and forges both `/event` and `/decide` can plant an *earlier* prompt;
 Done 2026-11-02 (Opus): spec 036 — Muse Code live capture (1.4.14, Windows): real tools
 `powershell`/`read_file`/`edit_file`/`search`, `turn_id` → `prompt_id`, shell `workdir` must be
 inside `cwd`, internal `submit_reminder_decision` allowed by rules; hook config needs Claude-style
-matcher groups, no quotes in `command`. Sample `integrations/muse_code/hooks.json` fixed. Next:
-one Muse session with AgentWarden on (`C:\tmp\muse-capture\.muse\hooks.json` → real hooks).
+matcher groups, no quotes in `command`. Sample `integrations/muse_code/hooks.json` fixed. Live
+run with AgentWarden on: `.env` read → `deny` blocked Muse with our reason; `ask` showed as
+"denied — approval aborted" (unclear whether Muse prompted). `C:\tmp\muse-capture\.muse\hooks.json`
+still points at the real hooks.
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`

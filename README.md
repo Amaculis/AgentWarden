@@ -86,8 +86,8 @@ Claude Code is the tested target. Adapters for other agents exist but have **not
 against a live agent session**; each integration README lists what is documented and what is
 guessed:
 
-- Muse Code: `integrations/muse_code/` (hook payloads and tool names captured live on Windows;
-  not yet run with AgentWarden switched on).
+- Muse Code: `integrations/muse_code/` (payloads captured live on Windows; a live `deny` on a
+  `.env` read blocked Muse Code).
 - GitHub Copilot: `integrations/copilot/` (from documentation only).
 - Codex: `integrations/codex/` (from documentation only).
 
