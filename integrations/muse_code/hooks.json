@@ -1,26 +1,36 @@
 {
-  "_comment": "Sample .muse/hooks.json for the Muse Code adapter (spec 028). UNVERIFIED: this file matches the structure reported by third-party docs (see README.md); it has not been confirmed against a real Muse Code session, and public reports disagree about whether a project .muse/hooks.json is honoured at all. Replace this file (and this comment) once the live capture confirms or corrects it.",
-  "schema_version": 1,
   "hooks": {
     "PreToolUse": [
       {
-        "command": "python3 \"${PROJECT_DIR}/hooks/on_tool.py\" --agent muse_code",
-        "commandWindows": "python \"%PROJECT_DIR%\\hooks\\on_tool.py\" --agent muse_code",
-        "timeout": 10
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Python313/python.exe C:/path/to/AgentWarden/hooks/on_tool.py --agent muse_code",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "command": "python3 \"${PROJECT_DIR}/hooks/on_read.py\" --agent muse_code",
-        "commandWindows": "python \"%PROJECT_DIR%\\hooks\\on_read.py\" --agent muse_code",
-        "timeout": 21
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Python313/python.exe C:/path/to/AgentWarden/hooks/on_read.py --agent muse_code",
+            "timeout": 21
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
-        "command": "python3 \"${PROJECT_DIR}/hooks/on_prompt.py\" --agent muse_code",
-        "commandWindows": "python \"%PROJECT_DIR%\\hooks\\on_prompt.py\" --agent muse_code",
-        "timeout": 2
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Python313/python.exe C:/path/to/AgentWarden/hooks/on_prompt.py --agent muse_code",
+            "timeout": 2
+          }
+        ]
       }
     ]
   }

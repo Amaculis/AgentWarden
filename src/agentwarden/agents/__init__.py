@@ -47,6 +47,8 @@ class Adapter:
     passthrough: bool = False
     field_aliases: Mapping[str, str] = field(default_factory=dict)
     event_names: Mapping[str, str] = field(default_factory=dict)
+    # Agent bookkeeping tools with no side effects; the rules allow `<agent>:<tool>` for these.
+    internal_tools: frozenset[str] = frozenset()
 
     def normalize(self, kind: EventKind, body: dict[str, Any]) -> dict[str, Any]:
         """A new dict in the Claude Code shape. Raises `AdapterError` on an ambiguous payload."""

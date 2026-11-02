@@ -520,6 +520,12 @@ def _unknown_agent_tool_rule(event: ToolEvent) -> Verdict | None:
     agent, sep, tool = event.tool_name.partition(":")
     if not sep:
         return None
+    try:
+        internal = agents.get_adapter(agent).internal_tools
+    except agents.AdapterError:
+        internal = frozenset()
+    if tool in internal:
+        return _allow(f"{agent} internal bookkeeping tool {tool}")
     return _ask(f"unknown {agent} tool {tool}; confirm before running it")
 
 

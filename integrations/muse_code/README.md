@@ -1,11 +1,35 @@
-# Muse Code integration (spec 028)
+# Muse Code integration (specs 028, 036)
 
 Wires AgentWarden's hooks into Muse Code (Meta's CLI coding agent) via the adapter in
-`src/agentwarden/agents/muse_code.py`. **Nothing in this integration has been confirmed
-against a real Muse Code session yet.** Everything below is either "verified by docs"
-(a third-party source explicitly states it) or "guessed" (inferred from naming
-conventions or other agents, never observed). Run the live check (bottom of this file)
-before trusting any of it in a demo.
+`src/agentwarden/agents/muse_code.py`.
+
+## Live capture (2026-11-02, Muse Code 1.4.14, Windows)
+
+One session in `C:\tmp\muse-capture` with `hook_logger.py` (AgentWarden off) confirmed:
+
+- **Hook config:** `<project>/.muse/hooks.json` is honoured once the folder is trusted, but only
+  in Claude-style matcher groups: `{"hooks": {"PreToolUse": [{"hooks": [{"type": "command",
+  "command": "..."}]}]}}`. A flat `[{"command": ...}]` list (the old sample here) is rejected
+  (`hook.admission outcome=rejected` in Muse's session log). No `schema_version` needed.
+- **Quotes** inside `command` reach the program literally on Windows: use absolute paths without
+  spaces and without quotes.
+- **A failing `UserPromptSubmit` hook blocks the prompt** (seen: Python could not open the
+  script, Muse showed "Prompt blocked by hook").
+- **Payloads** use Claude field names (`hook_event_name`, `tool_name`, `tool_input`,
+  `tool_use_id`, `tool_response`, `session_id`, `cwd`) plus `turn_id` (no `prompt_id`),
+  `model`, `model_provider`.
+- **Tools seen:** `powershell {command, description, workdir}` (workdir with a `\\?\` prefix),
+  `read_file {path}`, `edit_file {path, find, replace}`, `search {pattern, paths, output_mode}`,
+  and the internal `submit_reminder_decision` (17 of 23 calls). `tool_response` is a string for
+  `read_file` / `powershell` / `search`, an object for `edit_file`.
+- **Output rules** (from Muse's own error messages in the binary): `permissionDecision: allow`
+  without `updatedInput` is rejected, so AgentWarden stays silent on `allow` (the default; do
+  not set `WARDEN_ALLOW_MODE=explicit` for Muse); `deny` needs a non-empty
+  `permissionDecisionReason`; `hookSpecificOutput.hookEventName` is required.
+
+Still **not** checked live: AgentWarden switched on (that a `deny` blocks and an `ask` prompts),
+`write_file`, web and MCP tools, Linux/macOS tool names. The research below predates the
+capture; where it disagrees, the capture wins.
 
 ## Sources (fetched/searched 2026-11-01)
 
@@ -82,23 +106,16 @@ before trusting any of it in a demo.
   `PermissionRequest`/`UserPromptSubmit`). Assumed to match Claude Code's
   `hookSpecificOutput.additionalContext` since no source contradicts it, but not confirmed.
 
-## Install steps (once confirmed — see live check first)
+## Install steps
 
 1. Start the AgentWarden daemon: `make run` (or `uv run agentwarden-daemon`).
-2. Copy `integrations/muse_code/hooks.json` to `<project>/.muse/hooks.json`, or, if the live
-   check shows that file is ignored, register it as a trusted plugin instead
-   (`.muse-plugin/plugin.json`, `muse plugins install` / `approve` per source 1 — exact
-   manifest shape not drafted here pending confirmation).
-3. Trust the project folder if Muse Code requires it before project hooks run (source 2).
+2. Copy `integrations/muse_code/hooks.json` to `<project>/.muse/hooks.json` and replace
+   `C:/Python313/python.exe` and `C:/path/to/AgentWarden` with your absolute paths (no spaces,
+   no quotes).
+3. Trust the project folder when Muse Code asks (project hooks load only in a trusted folder).
 4. Set `WARDEN_URL` if the daemon is not on the default `http://127.0.0.1:8765`.
 5. Run Muse Code in the project; a denied action should show the same deny Claude Code
    shows for the same command.
-
-**`${PROJECT_DIR}` in `hooks.json` is unverified**, and source 2 says hooks run with a cleared
-environment. If the variable is empty the script path does not exist, Python exits non-zero,
-and what Muse Code then does is unknown (Claude Code proceeds: silent fail-open). Prefer an
-absolute path to this repo's `hooks/` in the real config, and confirm in the live check that a
-deny actually blocks.
 
 ## Live check (ONE short Muse Code session — budget is limited)
 
