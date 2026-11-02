@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS decisions (
     source TEXT NOT NULL,
     latency_ms INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS decisions_session_prompt ON decisions (session_id, prompt_id);
+CREATE INDEX IF NOT EXISTS prompts_session_prompt ON prompts (session_id, prompt_id);
 """
 
 
@@ -323,3 +326,42 @@ class Store:
             conn.close()
 
         return [row["prompt"] for row in rows]
+
+    def task_prompts(self, session_id: str, prompt_id: str | None, limit: int = 3) -> list[str]:
+        """Prompts the judge may treat as the task, oldest first (spec 035).
+
+        Only the first row for the action's prompt_id, plus earlier first-rows that had a
+        decision before the current turn's first decision: a prompt planted mid-turn never counts.
+        """
+        if prompt_id is None:
+            return self.session_prompts(session_id)[-limit:]
+        conn = self._connect()
+        try:
+            current = conn.execute(
+                "SELECT id, prompt FROM prompts WHERE session_id = ? AND prompt_id = ?"
+                " ORDER BY id ASC LIMIT 1",
+                (session_id, prompt_id),
+            ).fetchone()
+            if current is None:
+                return []
+            turn_start = conn.execute(
+                "SELECT MIN(id) AS id FROM decisions WHERE session_id = ? AND prompt_id = ?",
+                (session_id, prompt_id),
+            ).fetchone()["id"]
+            earlier = conn.execute(
+                """
+                SELECT p.prompt FROM prompts p
+                WHERE p.session_id = ? AND p.prompt_id IS NOT NULL AND p.prompt_id != ?
+                  AND p.id < ?
+                  AND p.id = (SELECT MIN(q.id) FROM prompts q
+                              WHERE q.session_id = p.session_id AND q.prompt_id = p.prompt_id)
+                  AND EXISTS (SELECT 1 FROM decisions d
+                              WHERE d.session_id = p.session_id AND d.prompt_id = p.prompt_id
+                                AND (? IS NULL OR d.id < ?))
+                ORDER BY p.id DESC LIMIT ?
+                """,
+                (session_id, prompt_id, current["id"], turn_start, turn_start, limit - 1),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [row["prompt"] for row in reversed(earlier)] + [current["prompt"]]

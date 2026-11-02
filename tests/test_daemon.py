@@ -250,6 +250,7 @@ def test_daemon_passes_session_context(tmp_path, monkeypatch):
     prompt_payload = {
         **USER_PROMPT_SUBMIT,
         "session_id": session_id,
+        "prompt_id": BASH_PRE_TOOL_USE["prompt_id"],  # spec 035: task is bound to prompt_id
         "prompt": "Please build the quarterly report, distinctive-prompt-marker-xyz",
     }
     first_action = {

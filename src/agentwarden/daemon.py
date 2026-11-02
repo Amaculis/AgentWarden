@@ -63,9 +63,9 @@ def failsafe(reason: str) -> Verdict:
     return with_system_message(_bare_failsafe(reason))
 
 
-def session_context(store: Store, session_id: str) -> SessionContext:
-    """Task (last 3 prompts) and last 5 actions of the session, oldest first."""
-    prompts = store.session_prompts(session_id)[-3:]
+def session_context(store: Store, session_id: str, prompt_id: str | None = None) -> SessionContext:
+    """Task (prompts bound to the action's prompt_id) and last 5 actions, oldest first."""
+    prompts = store.task_prompts(session_id, prompt_id)
     rows = store.recent_decisions(limit=5, session_id=session_id)
     actions = [{"tool_name": r["tool_name"], "tool_input": r["tool_input"]} for r in reversed(rows)]
     task = "\n---\n".join(prompts) or None
@@ -244,7 +244,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         # Context only feeds the judge; failing to build it must not stop the rules from
         # running (a hard deny must stay a deny).
         try:
-            context = session_context(store, tool_event.session_id)
+            context = session_context(store, tool_event.session_id, tool_event.prompt_id)
         except Exception:
             logger.exception("session context unavailable")
             context = None

@@ -43,7 +43,8 @@ Any local process — including a protected agent that obfuscates the daemon por
 built-in rule — can POST `/event` and plant a fake "user prompt" that the judge reads as the
 session task. Hooks cannot authenticate without a secret the agent could also read. The judge
 prompt draft treats the task as context, not authority; a stronger fix needs Claude Code to
-pass a per-session secret to hooks.
+pass a per-session secret to hooks. Narrowed by spec 035: the task is bound to the action's
+`prompt_id`, so a planted prompt cannot replace or extend the current one.
 
 ## Acceptance criteria
 

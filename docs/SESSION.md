@@ -98,7 +98,12 @@ answers `ask` ("too long to check") for Bash/PowerShell; a huge command no longe
 Docs: `docs/demo.md` has the SendKeys self-approval shot and the new message text; README has an
 "Other agents" section saying adapters 028–030 are not live-tested. Scratch folder
 `C:\tmp\muse-capture` (README + fake `.env`) is ready for the Muse Code live check.
-Not done: spec 018 follow-up (forged `/event` user prompt) — needs Opus.
+Done 2026-11-02 (Opus): spec 035 — the judge's task is bound to the action's `prompt_id`
+(verified on real captures: UserPromptSubmit and the turn's PreToolUse share it). Only the first
+prompt row for that id counts, plus up to 2 earlier prompts confirmed by a decision before the
+current turn; a prompt planted mid-turn never reaches the judge. Residual: an agent that reaches
+the daemon and forges both `/event` and `/decide` can plant an *earlier* prompt; adapters without
+`prompt_id` keep the old behaviour.
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
@@ -113,7 +118,7 @@ Waiting for the human:
 4. Live Muse Code check (`integrations/muse_code/README.md`); adapters 029/030 untested.
 
 Open problems:
-- Any local process can POST `/event` and plant a fake "user prompt" (spec 018).
+- Forged `/event` narrowed by spec 035 (residual risk in the spec).
 - No `uv`, no `make` here: `PYTHONPATH=src python eval/run.py --set actions --mode cascade`,
   `PYTHONPATH=src python -m pytest -q -m "not slow"`. Pass the raised timeouts as env vars
   (above) — code defaults are still the old ones; `.env.example` is only a reference.
