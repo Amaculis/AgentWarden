@@ -6,51 +6,45 @@
 <title>AgentWarden</title>
 <style>
   :root {
-    color-scheme: light dark;
-    --bg: #f1f4f7;
-    --surface: #ffffff;
-    --fg: #1c2b33;
-    --muted: #5d6c7b;
-    --faint: #8a96a3;
-    --line: #dee3e9;
-    --hover: #f6f8fa;
-    --select: #e8f1fd;
-    --blue: #0064e0;
-    --blue-hover: #0057c7;
-    --blue-soft: #e8f1fd;
-    --blue-soft-fg: #0057c7;
-    --allow: #1b7f37;
-    --allow-bg: #dff3e4;
-    --ask: #8a5a00;
-    --ask-bg: #fdf0cf;
-    --deny: #c4162f;
-    --deny-bg: #fde3e7;
-    --focus: #0064e0;
-    --shadow: 0 1px 2px rgba(28, 43, 51, 0.06), 0 0 0 1px rgba(28, 43, 51, 0.03);
+    color-scheme: dark light;
+    --bg: #1f1f21;
+    --fg: #f5f5f6;
+    --muted: #a3a3a9;
+    --faint: #6f6f76;
+    --line: #3a3a3e;
+    --hover: #28282b;
+    --select: #303034;
+    --btn-bg: #f5f5f6;
+    --btn-fg: #1f1f21;
+    --btn-hover: #ffffff;
+    --allow: #62d68e;
+    --allow-bg: rgba(98, 214, 142, 0.14);
+    --ask: #f3c34f;
+    --ask-bg: rgba(243, 195, 79, 0.14);
+    --deny: #ff7070;
+    --deny-bg: rgba(255, 112, 112, 0.14);
+    --focus: #f5f5f6;
     --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
   }
-  @media (prefers-color-scheme: dark) {
+  @media (prefers-color-scheme: light) {
     :root {
-      --bg: #12191f;
-      --surface: #1c2b33;
-      --fg: #f1f4f7;
-      --muted: #a6b3bf;
-      --faint: #74828f;
-      --line: #2f4350;
-      --hover: #22343e;
-      --select: #1e3a5c;
-      --blue: #4599ff;
-      --blue-hover: #6cb0ff;
-      --blue-soft: #1e3a5c;
-      --blue-soft-fg: #7fb8ff;
-      --allow: #6ad07f;
-      --allow-bg: #17402a;
-      --ask: #f7c24a;
-      --ask-bg: #43360f;
-      --deny: #ff7b8b;
-      --deny-bg: #4a1d27;
-      --focus: #6cb0ff;
-      --shadow: none;
+      --bg: #ffffff;
+      --fg: #1c1c1e;
+      --muted: #666670;
+      --faint: #9a9aa3;
+      --line: #dcdce1;
+      --hover: #f6f6f8;
+      --select: #eeeef2;
+      --btn-bg: #1c1c1e;
+      --btn-fg: #ffffff;
+      --btn-hover: #000000;
+      --allow: #197a3e;
+      --allow-bg: rgba(25, 122, 62, 0.1);
+      --ask: #8a5a00;
+      --ask-bg: rgba(168, 111, 0, 0.12);
+      --deny: #c4162f;
+      --deny-bg: rgba(196, 22, 47, 0.1);
+      --focus: #1c1c1e;
     }
   }
   * { box-sizing: border-box; }
@@ -61,131 +55,120 @@
     font-size: 14px;
     line-height: 1.45;
     margin: 0 auto;
-    max-width: 1240px;
+    max-width: 1180px;
     min-width: 300px;
-    padding: 24px 20px 48px;
+    padding: 40px 28px 64px;
     -webkit-font-smoothing: antialiased;
   }
   h1 {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 24px;
-    font-weight: 600;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 30px;
+    font-weight: 700;
     letter-spacing: -0.02em;
-    margin: 0 0 20px;
-  }
-  h1::before {
-    content: "";
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background:
-      radial-gradient(circle at center, var(--bg) 0 8px, transparent 9px),
-      conic-gradient(from 200deg, #0064e0, #7c4dff, #d546c5, #ff8a4c, #0064e0);
+    line-height: 1.15;
+    margin: 0 0 36px;
   }
   h1::after {
-    content: "decision log";
+    content: "Every action the agent tried and what AgentWarden decided.";
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 400;
+    letter-spacing: 0;
     color: var(--muted);
-    margin-top: 4px;
   }
   h2 {
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin: 32px 0 12px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 44px 0 14px;
   }
   #banner {
     display: none;
     background: var(--deny-bg);
     color: var(--deny);
-    border-radius: 12px;
-    padding: 10px 16px;
-    margin-bottom: 16px;
-    font-weight: 500;
+    border: 1px solid var(--deny);
+    border-radius: 20px;
+    padding: 10px 18px;
+    margin-bottom: 20px;
   }
   #banner.visible { display: block; }
   .controls {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 10px;
+    gap: 8px 12px;
     align-items: center;
-    background: var(--surface);
-    border-radius: 16px;
-    padding: 12px 16px;
-    box-shadow: var(--shadow);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 12px 20px;
   }
-  .controls label { color: var(--muted); font-weight: 500; margin-left: 10px; }
+  .controls label { color: var(--muted); margin-left: 14px; }
   .controls label:first-child { margin-left: 0; }
   select, input[type="text"], button {
-    background: var(--surface);
+    background: transparent;
     color: var(--fg);
     border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 6px 12px;
+    border-radius: 999px;
+    padding: 6px 14px;
     font: inherit;
   }
-  select { padding-right: 8px; }
+  select { padding-right: 10px; }
   select:hover, input[type="text"]:hover { border-color: var(--faint); }
   select:focus-visible, input[type="text"]:focus-visible, button:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
-  select option { background: var(--surface); color: var(--fg); }
-  button { cursor: pointer; font-weight: 600; transition: background 0.12s, color 0.12s; }
-  button:hover:not(:disabled) { background: var(--hover); }
+  select option { background: var(--bg); color: var(--fg); }
+  button { cursor: pointer; font-weight: 600; transition: background 0.12s, border-color 0.12s; }
+  button:hover:not(:disabled) { background: var(--hover); border-color: var(--faint); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   #tokenHint { color: var(--muted); margin-left: auto; font-size: 13px; }
   .stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px;
-    margin-top: 12px;
+    margin-top: 14px;
   }
   .stat {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    background: var(--surface);
-    border-radius: 16px;
-    padding: 16px 18px;
-    box-shadow: var(--shadow);
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 18px 20px;
   }
   .stat b {
-    font-size: 30px;
-    font-weight: 600;
-    line-height: 1.1;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.05;
     letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
   }
-  .stat span { color: var(--muted); font-size: 13px; font-weight: 500; }
+  .stat span { color: var(--muted); font-size: 13px; }
   .stat.allow b { color: var(--allow); }
   .stat.ask b { color: var(--ask); }
   .stat.deny b { color: var(--deny); }
   .tableWrap {
     overflow-x: auto;
-    background: var(--surface);
-    border-radius: 16px;
-    box-shadow: var(--shadow);
+    border: 1px solid var(--line);
+    border-radius: 20px;
   }
   table { border-collapse: collapse; width: 100%; }
   th, td {
     border-bottom: 1px solid var(--line);
-    padding: 12px 10px;
+    padding: 14px 10px;
     text-align: left;
     vertical-align: top;
   }
-  th:first-child, td:first-child { padding-left: 18px; }
-  th:last-child, td:last-child { padding-right: 18px; }
+  th:first-child, td:first-child { padding-left: 22px; }
+  th:last-child, td:last-child { padding-right: 22px; }
   th {
     color: var(--muted);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
     white-space: nowrap;
-    padding-top: 14px;
-    padding-bottom: 10px;
+    padding-top: 16px;
+    padding-bottom: 12px;
   }
   tbody tr:last-child td { border-bottom: 0; }
   tbody tr { transition: background 0.1s; }
@@ -201,11 +184,11 @@
   .badge {
     display: inline-block;
     border-radius: 999px;
-    padding: 2px 12px;
+    padding: 2px 13px;
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
-    background: var(--line);
+    background: var(--hover);
     color: var(--muted);
   }
   .badge.allow { background: var(--allow-bg); color: var(--allow); }
@@ -225,53 +208,39 @@
     margin: 0 6px 6px 0;
     padding: 3px 12px;
     font-size: 12px;
-    border: 0;
-    border-radius: 999px;
-    background: var(--blue-soft);
-    color: var(--blue-soft-fg);
+    color: var(--fg);
   }
-  .rowBtns button:hover:not(:disabled) { background: var(--blue); color: #fff; }
-  .confirm button:first-of-type:not(:only-child) { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .confirm button:first-of-type:not(:only-child):hover:not(:disabled) { background: var(--blue-hover); }
+  .confirm button:first-of-type:not(:only-child) {
+    background: var(--btn-bg);
+    border-color: var(--btn-bg);
+    color: var(--btn-fg);
+  }
+  .confirm button:first-of-type:not(:only-child):hover:not(:disabled) {
+    background: var(--btn-hover);
+    border-color: var(--btn-hover);
+  }
   tr.selectedRow, tr.selectedRow:hover { background: var(--select); }
   .confirm {
-    background: var(--ask-bg);
-    border-radius: 12px;
-    padding: 12px 14px;
+    border: 1px solid var(--ask);
+    border-radius: 16px;
+    padding: 12px 16px;
     margin: 4px 0;
   }
   .confirm .ruleLine { margin: 6px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .confirm input[type="text"] { flex: 1 1 200px; font-family: var(--mono); font-size: 12px; }
+  .confirm input[type="text"] { flex: 1 1 200px; font-family: var(--mono); font-size: 12px; border-radius: 12px; }
   .saveResult { margin: 4px 0 0; }
-  #scanList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  #scanList { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
   #scanList li {
-    background: var(--surface);
-    border-radius: 16px;
-    padding: 12px 18px 12px 52px;
-    position: relative;
-    box-shadow: var(--shadow);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 14px 20px;
   }
-  #scanList li::before {
-    content: "!";
-    position: absolute;
-    left: 16px;
-    top: 12px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--ask-bg);
-    color: var(--ask);
-    font-weight: 700;
-    text-align: center;
-    line-height: 24px;
-  }
-  #scanList li strong { font-weight: 600; }
+  #scanList li strong { font-weight: 600; color: var(--ask); }
   #scanList li .muted { font-size: 13px; }
   #policyPanel {
-    background: var(--surface);
-    border-radius: 16px;
-    padding: 6px 18px;
-    box-shadow: var(--shadow);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 8px 22px;
   }
   #policyPanel ul { margin: 2px 0 8px; padding-left: 20px; }
   #policyPanel .empty { color: var(--muted); }
