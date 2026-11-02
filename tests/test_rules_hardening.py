@@ -257,3 +257,85 @@ def test_evaluate_perf_on_repeated_verbs(command):
     start = time.monotonic()
     evaluate(_bash(command))
     assert time.monotonic() - start < 2.0
+
+
+# --- spec 034: oversized commands -------------------------------------------------------------
+
+LIMIT = rules.MAX_CHECKED_COMMAND_CHARS
+
+
+def _timed_evaluate(command: str):
+    start = time.monotonic()
+    verdict = evaluate(_bash(command))
+    return verdict, time.monotonic() - start
+
+
+def test_command_over_limit_asks_without_tokenizing():
+    verdict, elapsed = _timed_evaluate("echo " + "a" * 800_000)
+
+    assert verdict is not None and verdict.decision == "ask"
+    assert verdict.source == "rules"
+    assert "too long" in verdict.reason
+    assert not verdict.consult_judge
+    assert elapsed < 1.0
+
+
+def test_command_at_limit_is_still_checked():
+    command = "echo " + "a" * (LIMIT - len("echo "))
+    assert len(command) == LIMIT
+
+    verdict = evaluate(_bash(command))
+
+    assert verdict is None or "too long" not in verdict.reason
+
+
+def test_command_one_over_limit_asks():
+    verdict = evaluate(_bash("echo " + "a" * (LIMIT - len("echo ") + 1)))
+
+    assert verdict is not None and verdict.decision == "ask" and "too long" in verdict.reason
+
+
+@pytest.mark.parametrize("tool", ["Bash", "PowerShell"])
+def test_limit_applies_to_both_shell_tools(tool):
+    event = ToolEvent(
+        session_id="s1",
+        cwd=PROJECT,
+        hook_event_name="PreToolUse",
+        tool_name=tool,
+        tool_input={"command": "echo " + "a" * (LIMIT + 10)},
+    )
+
+    verdict = evaluate(event)
+
+    assert verdict is not None and verdict.decision == "ask"
+
+
+def test_hard_deny_still_wins_over_the_length_ask():
+    verdict, elapsed = _timed_evaluate("xdotool key Return " + "a" * 1_000_000)
+
+    assert verdict is not None and verdict.decision == "deny"
+    assert elapsed < 2.0
+
+
+def test_secret_read_still_denied_when_oversized():
+    verdict, _ = _timed_evaluate("cat .env " + "a" * (LIMIT + 10))
+
+    assert verdict is not None and verdict.decision == "deny"
+
+
+@pytest.mark.parametrize("pre", ["xdotool ", "import ", "scrot ", "echo "])
+def test_input_capture_is_linear_on_one_huge_token(pre):
+    from agentwarden import input_capture
+
+    start = time.monotonic()
+    input_capture.injection(pre + "a" * 1_000_000)
+    input_capture.capture(pre + "a" * 1_000_000)
+    assert time.monotonic() - start < 2.0
+
+
+def test_input_capture_still_finds_tool_after_huge_token():
+    from agentwarden import input_capture
+
+    command = "echo " + "a" * 200_000 + " ; xdotool key Return"
+
+    assert input_capture.injection(command) is not None

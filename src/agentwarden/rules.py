@@ -638,6 +638,16 @@ def _input_injection_rule(event: ToolEvent) -> Verdict | None:
 # ---------------------------------------------------------------------------
 
 
+MAX_CHECKED_COMMAND_CHARS = input_capture.MAX_LEXED_CHARS
+
+
+def _too_long_to_check(event: ToolEvent) -> bool:
+    if event.tool_name not in _SHELL_TOOLS:
+        return False
+    command = event.tool_input.get("command")
+    return isinstance(command, str) and len(command) > MAX_CHECKED_COMMAND_CHARS
+
+
 def _hard_deny_stage(event: ToolEvent) -> Verdict | None:
     for rule in (
         _secret_rule,
@@ -994,6 +1004,8 @@ _PATH_EXTENSION_RE = re.compile(r"\.[A-Za-z0-9_]+$")
 
 def split_command(command: str) -> list[str]:
     """Shell-ish tokens; operators come out as their own tokens (spec 008)."""
+    if len(command) > input_capture.MAX_LEXED_CHARS:
+        return input_capture.fallback_tokens(command)
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
@@ -1328,6 +1340,8 @@ def evaluate(event: ToolEvent, extra_roots: Sequence[str] = ()) -> Verdict | Non
     verdict = _hard_deny_stage(event)
     if verdict is not None:
         return verdict
+    if _too_long_to_check(event):
+        return _ask("this command is too long for AgentWarden to check; confirm before continuing")
     loaded = policy_module.load_policy(event.cwd)
     roots = policy_roots(event, loaded.extra_roots, extra_roots)
     resolved_hard, resolved_boundary = _resolution_stage(event, roots)

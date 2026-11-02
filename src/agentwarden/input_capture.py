@@ -210,8 +210,19 @@ _MAX_DEPTH = 2
 _FALLBACK_TOKEN_RE = re.compile(r"&&|\|\||[;&|()]|[^\s;&|()]+")
 
 
+# shlex is quadratic on one huge token; past this size plain regex words are used (spec 034).
+MAX_LEXED_CHARS = 50_000
+
+
+def fallback_tokens(command: str) -> list[str]:
+    return [tok.strip("\"'") for tok in _FALLBACK_TOKEN_RE.findall(command)]
+
+
 def _tokens(command: str) -> Iterator[str]:
     """Shell-ish tokens with operators as their own tokens (same lexer as `rules`), lazily."""
+    if len(command) > MAX_LEXED_CHARS:
+        yield from fallback_tokens(command)
+        return
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.escape = ""
@@ -221,7 +232,7 @@ def _tokens(command: str) -> Iterator[str]:
         yield from lexer
     except ValueError:  # unbalanced quote: the whole command again, as plain words
         yield ";"
-        yield from (tok.strip("\"'") for tok in _FALLBACK_TOKEN_RE.findall(command))
+        yield from fallback_tokens(command)
 
 
 def _segments(command: str) -> Iterator[list[str]]:
