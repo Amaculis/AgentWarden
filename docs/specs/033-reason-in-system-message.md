@@ -1,7 +1,10 @@
-# NNN — Show the reason in the visible AgentWarden message
+# 033 — Show the reason in the visible AgentWarden message
 
 Size: small (decide.py message text + tests; no change to decisions or fail-safe paths)
-Status: draft, waiting for the human's answers (see Open questions). Next free number at start: 033.
+Decisions (human unavailable, defaults chosen 2026-11-02): English text; one line, 200 characters; reason also stays in
+`permissionDecisionReason`; no extra env switch (`WARDEN_NOTIFY=off` covers it); the deny line shows
+the reason as the daemon built it (it already carries the safer alternative, so it is part of the
+truncated text).
 
 ## Context
 
@@ -27,23 +30,23 @@ action (rules)" (`decide.with_system_message`). For the demo and for daily use t
 ## Interface
 
 - `decide.with_system_message(verdict)`: builds `"🛡 AgentWarden: {verb} ({label}): {short_reason}"`.
-- New helper `short_reason(text, limit=200)` in `decide.py` (or `redact.py` if it reads better).
-- Optional env `WARDEN_NOTIFY_REASON=off` to go back to the source-only message (decide in the
-  open questions).
+- New helper `short_reason(text) -> str | None` in `decide.py`: clean (NFKC, control/format chars
+  dropped), collapse whitespace, drop a leading "AgentWarden:", redact, truncate at a word boundary.
+- `decide.MAX_MESSAGE_REASON = 200`.
 
 ## Failure paths
 
-- Empty or missing reason → source-only message as today.
+- Empty or missing reason (or only the "AgentWarden:" prefix) → source-only message as today.
 - `redact` or truncation raises → source-only message; the decision itself is never changed.
 
 ## Acceptance criteria
 
-- [ ] `test_system_message_contains_reason` for a rules `ask` and a rules `deny`.
-- [ ] `test_system_message_reason_is_redacted` — a secret in a model reason does not appear.
-- [ ] `test_system_message_reason_truncated_single_line` — newlines collapsed, ≤ the limit.
-- [ ] `test_system_message_without_reason_unchanged`.
-- [ ] Existing exact-string assertions in `tests/hooks/test_on_tool.py` updated, not deleted.
-- [ ] `make test` green, `make lint` clean, eval-rules +0.000.
+- [x] `test_system_message_contains_reason_for_ask` and `..._for_deny`.
+- [x] `test_system_message_reason_is_redacted` — a secret in a model reason does not appear.
+- [x] `test_system_message_reason_is_single_line_and_truncated` — newlines collapsed, ≤ the limit, cut at a word boundary.
+- [x] `test_system_message_without_reason_unchanged`, `test_failure_in_short_reason_falls_back_to_source_only`.
+- [x] Existing `endswith("(rules)")` / `endswith("(policy)")` assertions in `tests/test_decide.py` updated, not deleted (the hook tests use stub messages and are unchanged).
+- [x] `make test` green, `make lint` clean, eval-rules +0.000.
 
 ## Out of scope
 
@@ -55,18 +58,3 @@ action (rules)" (`decide.with_system_message`). For the demo and for daily use t
 
 Yes, positive: each stop shows its reason on screen, so the viewer sees why without opening the
 dashboard.
-
-## Open questions (ask the human when they join)
-
-1. What exactly do you see now when AgentWarden asks: only the command in Claude Code's dialog, or
-   also the 🛡 line? Which verdict source was it (rules / local model / Muse Spark)? A screenshot
-   settles whether `permissionDecisionReason` is rendered at all.
-2. Where should the reason appear: only in the 🛡 line (this draft), or also stay in
-   `permissionDecisionReason` as today? (Keeping both is the default.)
-3. For `deny`, add the safer alternative to the line, or keep it only in what the agent sees?
-4. Language: reasons are English like the rest of the product. Is that fine for the demo video, or
-   should the 🛡 line be Russian?
-5. Length: 200 characters one line, or allow a second line for long model explanations?
-6. Do you want the `WARDEN_NOTIFY_REASON=off` switch, or is `WARDEN_NOTIFY=off` enough?
-7. Are some rule reasons too vague today ("confirm before continuing")? If yes, list the ones you
-   remember and I fold a wording pass into this spec.

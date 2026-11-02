@@ -125,13 +125,13 @@ def test_deny_and_ask_include_system_message():
     assert deny_verdict.source == "rules"
     assert deny_verdict.system_message is not None
     assert "AgentWarden" in deny_verdict.system_message
-    assert deny_verdict.system_message.endswith("(rules)")
+    assert "blocked (rules): " in deny_verdict.system_message
 
     assert ask_verdict.decision == "ask"
     assert ask_verdict.source == "rules"
     assert ask_verdict.system_message is not None
     assert "AgentWarden" in ask_verdict.system_message
-    assert ask_verdict.system_message.endswith("(rules)")
+    assert "needs confirmation (rules): " in ask_verdict.system_message
 
 
 def test_allow_verdict_has_no_system_message():
@@ -175,7 +175,7 @@ def test_policy_sourced_system_message_has_policy_label(tmp_path, monkeypatch):
     assert verdict.decision == "ask"
     assert verdict.source == "policy"
     assert verdict.system_message is not None
-    assert verdict.system_message.endswith("(policy)")
+    assert "(policy)" in verdict.system_message
 
 
 # ---------------------------------------------------------------------------

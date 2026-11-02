@@ -11,6 +11,7 @@ from agentwarden.cascade import decide_with_cascade
 from agentwarden.judge import SessionContext, env_float, judge
 from agentwarden.models import ToolEvent, Verdict, failsafe
 from agentwarden.providers import Provider, get_provider
+from agentwarden.redact import redact
 from agentwarden.rules import evaluate
 
 _SOURCE_LABELS = {
@@ -66,6 +67,33 @@ def with_alternative(verdict: Verdict, tainted: bool = False) -> Verdict:
     return verdict.model_copy(update={"reason": reason, "safer_alternative": alternative})
 
 
+MAX_MESSAGE_REASON = 200
+_REASON_INPUT_CAP = 20_000
+_REASON_REDACT_CAP = 1_000
+_OWN_PREFIX = re.compile(r"^AgentWarden:\s*", re.IGNORECASE)
+
+
+def short_reason(text: object) -> str | None:
+    """One redacted line of at most `MAX_MESSAGE_REASON` characters for the visible message.
+
+    `None` when there is nothing to show. The reason may be model text that quotes the command,
+    so it is cleaned, redacted and cut at a word boundary (spec 033).
+    """
+    if not isinstance(text, str):
+        return None
+    line = " ".join(clean_text(text[:_REASON_INPUT_CAP]).split())
+    line = _OWN_PREFIX.sub("", line)[:_REASON_REDACT_CAP]
+    line = redact(line).strip()
+    if not line:
+        return None
+    if len(line) > MAX_MESSAGE_REASON:
+        cut = line[: MAX_MESSAGE_REASON - 1]
+        if line[MAX_MESSAGE_REASON - 1] != " " and " " in cut:
+            cut = cut.rsplit(" ", 1)[0]
+        line = cut.rstrip() + "…"
+    return line
+
+
 def with_system_message(verdict: Verdict) -> Verdict:
     """Attach a `systemMessage`-style note for deny/ask verdicts, unless disabled."""
     if verdict.decision == "allow":
@@ -73,10 +101,17 @@ def with_system_message(verdict: Verdict) -> Verdict:
     if os.environ.get("WARDEN_NOTIFY", "").lower() == "off":
         return verdict
     label = _SOURCE_LABELS.get(verdict.source, verdict.source)
-    verb = "blocked" if verdict.decision == "deny" else "needs confirmation for"
-    return verdict.model_copy(
-        update={"system_message": f"🛡 AgentWarden: {verb} this action ({label})"}
-    )
+    try:
+        reason = short_reason(verdict.reason)
+    except Exception:
+        reason = None
+    if reason is not None:
+        verb = "blocked" if verdict.decision == "deny" else "needs confirmation"
+        message = f"🛡 AgentWarden: {verb} ({label}): {reason}"
+    else:
+        verb = "blocked" if verdict.decision == "deny" else "needs confirmation for"
+        message = f"🛡 AgentWarden: {verb} this action ({label})"
+    return verdict.model_copy(update={"system_message": message})
 
 
 def apply_thresholds(verdict: Verdict) -> Verdict:
