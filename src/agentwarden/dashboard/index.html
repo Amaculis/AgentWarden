@@ -7,120 +7,222 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #fff;
-    --fg: #1a1a1a;
-    --muted: #5a5a5a;
-    --border: #d8d8d8;
-    --row-alt: #f6f6f6;
-    --allow-bg: #dff0dc;
-    --allow-fg: #1e6b22;
-    --ask-bg: #fbf0cd;
-    --ask-fg: #8a5f00;
-    --deny-bg: #f8dcd9;
-    --deny-fg: #a1231a;
-    --warn-bg: #fff6db;
-    --accent: #0b5cad;
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --fg: #16181d;
+    --muted: #667085;
+    --border: #e3e6eb;
+    --row-hover: #f1f4f9;
+    --allow-bg: #e3f4e6;
+    --allow-fg: #1b6a2c;
+    --ask-bg: #fbf0d0;
+    --ask-fg: #8a5a00;
+    --deny-bg: #fbe2df;
+    --deny-fg: #b0261b;
+    --warn-bg: #fff7de;
+    --accent: #3b6fd4;
+    --accent-soft: #e6edfb;
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #1e1e1e;
-      --fg: #e0e0e0;
-      --muted: #a8a8a8;
-      --border: #444;
-      --row-alt: #262626;
-      --allow-bg: #1d3a24;
-      --allow-fg: #8fd694;
-      --ask-bg: #4a3a10;
-      --ask-fg: #f2c94c;
-      --deny-bg: #4d211d;
-      --deny-fg: #f1988f;
-      --warn-bg: #3d320f;
-      --accent: #6aa8f0;
+      --bg: #14161a;
+      --surface: #1b1e24;
+      --fg: #e6e8ec;
+      --muted: #8b93a1;
+      --border: #2b2f37;
+      --row-hover: #222630;
+      --allow-bg: #17331f;
+      --allow-fg: #7fd48f;
+      --ask-bg: #3b300e;
+      --ask-fg: #f0c24f;
+      --deny-bg: #431c19;
+      --deny-fg: #f29a91;
+      --warn-bg: #2f290f;
+      --accent: #7aa2f0;
+      --accent-soft: #1f2b45;
+      --shadow: none;
     }
   }
+  * { box-sizing: border-box; }
   body {
     background: var(--bg);
     color: var(--fg);
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 13px;
+    line-height: 1.45;
     margin: 0 auto;
-    max-width: 1100px;
+    max-width: 1280px;
     min-width: 300px;
-    padding: 12px;
+    padding: 20px 16px 32px;
   }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  h2 { font-size: 14px; margin: 16px 0 6px; }
+  h1 {
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h1::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--allow-fg);
+    box-shadow: 0 0 0 4px var(--allow-bg);
+  }
+  h2 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 26px 0 8px;
+  }
   #banner {
     display: none;
     background: var(--deny-bg);
     color: var(--deny-fg);
     border: 1px solid currentColor;
-    border-radius: 6px;
-    padding: 8px 10px;
-    margin-bottom: 10px;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
   }
   #banner.visible { display: block; }
   .controls {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 8px 10px;
     align-items: center;
-    margin-bottom: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    box-shadow: var(--shadow);
   }
-  .controls label { color: var(--muted); }
+  .controls label {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
   select, input[type="text"], button {
-    background: var(--bg);
+    background: var(--surface);
     color: var(--fg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 13px;
+    border-radius: 7px;
+    padding: 4px 10px;
+    font: inherit;
   }
-  button { cursor: pointer; }
+  select:focus-visible, input[type="text"]:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  button { cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+  button:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
-  #tokenHint { color: var(--muted); }
-  #counters { color: var(--muted); margin: 4px 0 0; }
-  .tableWrap { overflow-x: auto; }
+  #tokenHint { color: var(--muted); margin-left: auto; }
+  #counters {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    margin: 12px 2px 0;
+    word-spacing: 0.15em;
+  }
+  .tableWrap {
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+  }
   table { border-collapse: collapse; width: 100%; }
   th, td {
     border-bottom: 1px solid var(--border);
-    padding: 5px 8px;
+    padding: 8px 10px;
     text-align: left;
     vertical-align: top;
   }
-  tbody tr:nth-child(even) { background: var(--row-alt); }
+  th {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    background: var(--surface);
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr { cursor: default; transition: background 0.1s; }
+  tbody tr:hover { background: var(--row-hover); }
+  tbody tr td:first-child { padding-left: 14px; box-shadow: inset 3px 0 0 transparent; }
+  tbody tr:has(.badge.deny) td:first-child { box-shadow: inset 3px 0 0 var(--deny-fg); }
+  tbody tr:has(.badge.ask) td:first-child { box-shadow: inset 3px 0 0 var(--ask-fg); }
+  tbody tr:has(.badge.allow) td:first-child { box-shadow: inset 3px 0 0 var(--allow-fg); }
+  td:nth-child(1):not([colspan]), td:nth-child(6) {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  td:nth-child(2), td:nth-child(5) { white-space: nowrap; }
   .badge {
     display: inline-block;
-    border-radius: 10px;
-    padding: 1px 9px;
+    border-radius: 999px;
+    padding: 1px 10px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
   }
   .badge.allow { background: var(--allow-bg); color: var(--allow-fg); }
   .badge.ask { background: var(--ask-bg); color: var(--ask-fg); }
   .badge.deny { background: var(--deny-bg); color: var(--deny-fg); }
-  .action { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .reason { min-width: 260px; max-width: 420px; }
-  .rowBtns { white-space: nowrap; }
-  .rowBtns button { margin-right: 4px; }
-  tr.selectedRow { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .action {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .reason { min-width: 260px; max-width: 420px; color: var(--fg); }
+  .rowBtns { min-width: 150px; }
+  .rowBtns button {
+    margin: 0 4px 4px 0;
+    padding: 2px 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .rowBtns button:hover:not(:disabled) { color: var(--fg); }
+  tr.selectedRow { background: var(--accent-soft); }
+  tr.selectedRow:hover { background: var(--accent-soft); }
   .confirm {
     background: var(--warn-bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px;
-    margin: 6px 0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 4px 0;
   }
-  .confirm .ruleLine { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .confirm input[type="text"] { flex: 1 1 200px; }
+  .confirm .ruleLine { margin: 6px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .confirm input[type="text"] { flex: 1 1 200px; font-family: var(--mono); font-size: 12px; }
   .saveResult { margin: 4px 0 0; }
-  #scanList { list-style: none; margin: 0; padding: 0; }
+  #scanList { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   #scanList li {
     background: var(--warn-bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 8px;
-    margin-bottom: 6px;
+    border-left: 3px solid var(--ask-fg);
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+  #policyPanel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px 14px;
+    box-shadow: var(--shadow);
   }
   #policyPanel ul { margin: 2px 0 8px; padding-left: 20px; }
   #policyPanel .empty { color: var(--muted); }
