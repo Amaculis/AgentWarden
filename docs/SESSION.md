@@ -60,8 +60,9 @@ Reviewer: no findings. 905 tests, eval-rules +0.000.
 027 follow-ups on main: broken formatter → Claude-schema `deny` (`13ad51d`); on_read forwards
 payloads without an event name (`fe6c0a0`).
 
-Ready to merge (Opus-reviewed, review findings fixed, pairwise merge-clean, rebased on `fe6c0a0`,
-no push): `028-muse-code`, `029-copilot`, `030-codex`, worktrees under `.claude/worktrees/`.
+Merged into main on 2026-11-02 (no push; `--no-ff` merges `a4258ab`, `23ca782`, `bd03795`, no
+conflicts; 1259 tests, eval-rules +0.000): `028-muse-code`, `029-copilot`, `030-codex`. The
+branches and their worktrees under `.claude/worktrees/` still exist, delete when done.
 - 028: shell tools from a third-party issue, other tool names guessed; config dirs `.muse/`,
   `.muse-plugin/`, `~/.config/muse/`. Live check = one short session in a scratch folder with a
   fake `.env` (`integrations/muse_code/README.md`); AgentWarden is off during it.
