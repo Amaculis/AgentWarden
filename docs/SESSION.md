@@ -97,7 +97,7 @@ regex tokenizer (`input_capture.fallback_tokens`) and, after the hard-deny stage
 answers `ask` ("too long to check") for Bash/PowerShell; a huge command no longer takes 30 s.
 Docs: `docs/demo.md` has the SendKeys self-approval shot and the new message text; README has an
 "Other agents" section saying adapters 028–030 are not live-tested. Scratch folder
-`C:	mp\muse-capture` (README + fake `.env`) is ready for the Muse Code live check.
+`C:\tmp\muse-capture` (README + fake `.env`) is ready for the Muse Code live check.
 Not done: spec 018 follow-up (forged `/event` user prompt) — needs Opus.
 
 Waiting for the human:
