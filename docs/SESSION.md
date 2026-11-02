@@ -1,4 +1,4 @@
-# Session state — 2026-11-01
+# Session state — 2026-11-02
 
 Done: spec 022 (`e185abc`) — cascade escalates to Muse Spark when the action shows obfuscation
 signals (`src/agentwarden/obfuscation.py`: `decode_exec`, `decode_blob`, `ps_encoded`,
@@ -87,23 +87,30 @@ as a comment (`echo #\n<cmd>` hid every later line from the boundary check); upl
 detection is now `verb → tail` per `|;&` segment (`_has_upload`, `_has_history_rewrite`), same
 verdicts as the old regexes (oracle tests + fuzz), linear time. Reviewer found a scp/rsync
 narrowing (delimiter inside a quoted remote spec) and the same quadratic shape in
-`_DOWNLOAD_PIPE_RE` / `_DISK_DESTROY_RE` (`"dd " * 30000` = 19 s) — both fixed. Open: `shlex` is
-quadratic on one huge token (800 KB → ~11 s per call, pre-existing; hook timeout → `ask`).
+`_DOWNLOAD_PIPE_RE` / `_DISK_DESTROY_RE` (`"dd " * 30000` = 19 s) — both fixed. The `shlex` quadratic on one huge token
+is fixed by spec 034.
 
-Planned (backlog draft, needs the human's answers): `docs/specs/backlog/reason-in-system-message.md`
-— put the verdict reason into the visible 🛡 `systemMessage` (redacted, one line). Open questions
-are listed at the bottom of the draft; ask them when the human picks the task up.
+Done 2026-11-02 (Sonnet): spec 033 (`029e8e4`) — the visible 🛡 message now carries the verdict
+reason (`decide.short_reason`: cleaned, redacted, one line, ≤200 chars; falls back to the old
+source-only text on any error). Spec 034 (`b3d2e33`) — commands over 50 000 chars use a linear
+regex tokenizer (`input_capture.fallback_tokens`) and, after the hard-deny stage, `evaluate`
+answers `ask` ("too long to check") for Bash/PowerShell; a huge command no longer takes 30 s.
+Docs: `docs/demo.md` has the SendKeys self-approval shot and the new message text; README has an
+"Other agents" section saying adapters 028–030 are not live-tested. Scratch folder
+`C:	mp\muse-capture` (README + fake `.env`) is ready for the Muse Code live check.
+Not done: spec 018 follow-up (forged `/event` user prompt) — needs Opus.
 
 Waiting for the human:
 1. Dashboard in a real browser + demo dry run (`docs/demo.md`); PostToolUse `tool_response`
    shape for Read/WebFetch still unverified.
-2. Delete `muse-install.ps1`, stray `make` file (leftover `ps` output), `pytest-of-Artem/`
-   (it also crashes `ruff format --check .`; use `ruff format --check src tests eval redteam
-   hooks`), and branch `backup/pre-secret-fix` if done with it.
-3. Drop `openai` from `pyproject.toml` (no longer imported).
-4. Decide whether to move `eval/candidates/judge_attack-023.jsonl` (or part of it) into
-   `eval/cases/` (human-owned). Eval runner overwrites a result file per commit+mode: candidate
-   runs clobber the main run's file — maybe add the case-file name to the result name.
+2. Delete `pytest-of-Artem/` by hand (permission denied for me; it also crashes
+   `ruff format --check .`; use `ruff check src tests hooks eval redteam`), decide on branch
+   `backup/pre-secret-fix`, optionally run `uv lock` (lock still lists `openai`). Merged branches,
+   worktrees and the stray files are already removed.
+3. `eval/candidates/judge_attack-023.jsonl` stays in candidates (human decision 2026-11-02).
+   Eval runner overwrites a result file per commit+mode: candidate runs clobber the main run's
+   file — maybe add the case-file name to the result name (not done, touches many tests).
+4. Live Muse Code check (`integrations/muse_code/README.md`); adapters 029/030 untested.
 
 Open problems:
 - Any local process can POST `/event` and plant a fake "user prompt" (spec 018).

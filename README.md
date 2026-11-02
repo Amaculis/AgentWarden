@@ -80,6 +80,16 @@ It listens on 127.0.0.1:8765 and prints the dashboard URL (with the UI token) to
 
 6. Open the dashboard URL from the daemon console in VS Code with `Simple Browser: Show`. New decisions appear within 2 seconds. `Always allow` / `Always deny` buttons append rules to that project's policy file.
 
+## Other agents
+
+Claude Code is the tested target. Adapters for other agents exist but have **not been run
+against a live agent session**; each integration README lists what is documented and what is
+guessed:
+
+- Muse Code: `integrations/muse_code/` (tool names partly guessed; live check pending).
+- GitHub Copilot: `integrations/copilot/` (from documentation only).
+- Codex: `integrations/codex/` (from documentation only).
+
 ## Try the demo
 
 The demo project hides an instruction in its README. The scanner flags it at read time, and the follow-up exfiltration is blocked with a reason and a safer alternative.
