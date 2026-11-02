@@ -45,14 +45,15 @@ how `ask`/`deny` are handled, PostToolUse / UserPromptSubmit equivalents.
 
 ## Acceptance criteria
 
-- [ ] `tests/test_agent_muse_code.py` — fixture payloads (from docs; marked UNVERIFIED until the
+- [x] `tests/test_agent_muse_code.py` — fixture payloads (from docs; marked UNVERIFIED until the
       live capture) for each mapped tool normalize to the canonical event; `rm -rf /` deny,
       `.env` read deny, `ls` allow, unmapped tool `ask`.
-- [ ] Writes and shell commands touching each Muse Code config path are hard-denied.
-- [ ] Hook end-to-end: `on_tool.py --agent muse_code` against the stub daemon prints output in
-      Muse Code's schema (formatter tests if a formatter exists).
-- [ ] `integrations/muse_code/README.md` with install steps, sources and the live-check list.
-- [ ] `make test` green, `make lint` clean, `make eval-rules` delta 0.000.
+- [x] Writes and shell commands touching each Muse Code config path are hard-denied.
+- [x] Hook end-to-end: `on_tool.py --agent muse_code` against the stub daemon prints output in
+      Muse Code's schema (formatter tests if a formatter exists). No formatter: research found
+      Muse Code's `PreToolUse` schema already matches Claude Code's.
+- [x] `integrations/muse_code/README.md` with install steps, sources and the live-check list.
+- [x] `make test` green, `make lint` clean, `make eval-rules` delta 0.000.
 
 ## Out of scope
 
