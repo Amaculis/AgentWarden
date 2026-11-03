@@ -158,53 +158,52 @@ an LLM with an LLM", with numbers instead of promises.
 
 ## Quick start
 
+**1. Install** (Python 3.12+):
+
 ```sh
-make install                       # Python 3.12 + uv
+uv tool install git+https://github.com/Amaculis/AgentWarden    # or: pipx install git+https://github.com/Amaculis/AgentWarden
 ```
 
-Set the environment in the shell that will start the daemon:
+**2. Pick a judge and start the daemon** in its own terminal:
 
 ```sh
+# Fully offline: local Llama decides, anything it is unsure about becomes ask
 export WARDEN_JUDGE=cascade
-export META_API_KEY=<your-key>
-export WARDEN_LOCAL_BASE=http://127.0.0.1:11434/v1   # e.g. Ollama
+export WARDEN_LOCAL_BASE=http://127.0.0.1:11434/v1   # Ollama: ollama pull llama3.1:8b
 export WARDEN_LOCAL_MODEL=llama3.1:8b
+export META_API_KEY=<your-key>                       # optional: hard cases go to Muse Spark
+
+agentwarden serve                                    # 127.0.0.1:8765, prints the dashboard URL
 ```
 
-`WARDEN_JUDGE=meta_api` works without a local model. With `WARDEN_JUDGE=off`, anything the rules
-don't settle becomes `ask`.
+No local model? `WARDEN_JUDGE=meta_api` uses Muse Spark only. With no judge at all, the rules
+still run and anything they don't settle becomes `ask`.
+
+**3. Protect a project:**
 
 ```sh
-make run                           # daemon on 127.0.0.1:8765, prints the dashboard URL
+cd my-project
+agentwarden init       # adds the hooks to .claude/settings.local.json (--shared: settings.json)
+agentwarden status     # hooks, daemon, judge setup
 ```
 
-Protect a project: merge `examples/settings.agentwarden.json` (or
-`examples/settings.agentwarden.windows.json` on Windows) into that project's
-`.claude/settings.json`.
-
-<details>
-<summary>What the hook settings look like</summary>
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR}/hooks/on_prompt.py\"", "timeout": 5}]}
-    ],
-    "PreToolUse": [
-      {"matcher": "*", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR}/hooks/on_tool.py\"", "timeout": 15}]}
-    ],
-    "PostToolUse": [
-      {"matcher": "Read|WebFetch", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR}/hooks/on_read.py\"", "timeout": 15}]}
-    ]
-  }
-}
-```
-
-</details>
+Restart Claude Code in the project. `agentwarden uninstall` removes the hooks. The protected agent
+itself cannot run `init`, `uninstall` or `serve`, or touch the installed package: those are
+built-in hard denies.
 
 Open the dashboard URL from the daemon console in VS Code (`Simple Browser: Show`). New decisions
 appear within 2 seconds.
+
+<details>
+<summary>From a clone (development)</summary>
+
+```sh
+make install           # uv sync
+make run               # same daemon as agentwarden serve
+uv run agentwarden init ../my-project
+```
+
+</details>
 
 The models' instructions live in `prompts/judge.md` and `prompts/scanner.md`; read them before
 relying on the verdicts.
@@ -335,6 +334,7 @@ Details per agent: `integrations/<agent>/README.md`.
 ```text
 hooks/          Claude Code hook scripts; forward to the daemon, fail closed to ask
 src/agentwarden/
+  cli.py        agentwarden init / uninstall / status / serve
   daemon.py     FastAPI: /event, /decide, /log, dashboard
   rules.py      deterministic hard denies, user policy, defaults
   cascade.py    local Llama → Muse Spark escalation
