@@ -13,6 +13,7 @@ confirm or correct every guess in `agentwarden/agents/muse_code.py`.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 from datetime import UTC, datetime
@@ -43,9 +44,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    try:
+    with contextlib.suppress(Exception):
         main()
-    except Exception:
-        pass
     # Deliberately prints nothing and always exits 0: a logging hook must never deny,
     # ask or otherwise change what Muse Code does during the capture session.
