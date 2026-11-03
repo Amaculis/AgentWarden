@@ -59,6 +59,10 @@ the command is called.
 
 <!-- video link -->
 
+https://github.com/user-attachments/assets/19c799bb-d5b1-43e7-984b-012288d6c9a0
+
+
+
 <table>
 <tr>
 <td width="50%"><img src="docs/assets/scanner.png" alt="The scanner flags a hidden instruction in README.md"><br><sub><b>1. Scan.</b> The agent opens <code>README.md</code>; the local Llama scanner flags the hidden instruction and warns the agent.</sub></td>
