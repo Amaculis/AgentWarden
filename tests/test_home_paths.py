@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from agentwarden.models import ToolEvent
@@ -36,6 +38,8 @@ def test_tilde_path_is_not_inside_project(home):
 )
 def test_env_var_home_paths_expanded(home, path):
     assert _is_inside_project(path, str(home / "proj")) is False
+    if path.startswith("%") and os.name != "nt":
+        return  # %VAR% expands only on Windows; elsewhere it stays unresolved (stricter)
     assert _is_inside_project(path.replace(".aws/config", "proj/src/app.py"), str(home / "proj"))
 
 
