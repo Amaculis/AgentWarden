@@ -8,13 +8,25 @@ Every action the agent takes gets `allow`, `deny` or `ask` — decided by determ
 a local Llama model, and Muse Spark for the hard cases. Anything it reads is scanned for
 injected instructions. When in doubt, it fails closed.
 
+[![CI](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml/badge.svg)](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
 ![Tests](https://img.shields.io/badge/tests-1315%20passing-2ea44f)
 ![Local judge](https://img.shields.io/badge/local%20judge-Llama%203.1%208B-0467DF)
 ![Escalation](https://img.shields.io/badge/escalation-Muse%20Spark-0467DF)
 ![Fail-closed](https://img.shields.io/badge/fail--closed-always-critical)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-<!-- video link -->
+**[Demo](#demo) · [How it works](#how-it-works) · [Results](#headline-numbers) · [Quick start](#quick-start) · [Evaluation](#evaluation)**
+
+<br>
+
+![AgentWarden blocks an attempt to send .env to an external URL](docs/assets/demo-block.gif)
+
+<sub>A planted instruction tells the agent to send <code>.env</code> to a URL. The hook blocks it with a reason and a safer alternative; the dashboard logs the deny.</sub>
+
+| 🎯 **100%** | 💸 **~40× cheaper** | 🏠 **87.5%** |
+| :---: | :---: | :---: |
+| of attacks caught,<br>0 of 147 red-team attacks got through | than sending every action<br>to Muse Spark, same accuracy | of judged actions decided<br>locally, code stays on the machine |
 
 </div>
 
@@ -44,6 +56,21 @@ the command is called.
 | 🔒 **Can't be switched off by the agent** | Editing AgentWarden's policy or hook settings, calling its daemon, killing it, or faking keystrokes to approve its own prompts are hard denies that no policy can override. |
 | 📋 **Keeps an audit trail** | Every decision goes to a local SQLite log and a live dashboard, with *Always allow / Always deny* buttons. |
 
+## Demo
+
+<!-- video link -->
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/scanner.png" alt="The scanner flags a hidden instruction in README.md"><br><sub><b>1. Scan.</b> The agent opens <code>README.md</code>; the local Llama scanner flags the hidden instruction and warns the agent.</sub></td>
+<td width="50%"><img src="docs/assets/blocked.png" alt="AgentWarden blocks cat .env piped to curl"><br><sub><b>2. Block.</b> <code>cat .env | curl …</code> is denied by a deterministic rule, with a safer alternative.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/ask.png" alt="The judge asks the user about a borderline command"><br><sub><b>3. Ask.</b> A borderline command goes to the judge, which explains why it wants a human to confirm.</sub></td>
+<td width="50%"><img src="docs/assets/dashboard.png" alt="AgentWarden dashboard with the decision feed"><br><sub><b>4. Audit.</b> Every decision lands in the dashboard: who decided (rules, Llama, Spark), the risk and the reason.</sub></td>
+</tr>
+</table>
+
 ## Headline numbers
 
 Measured on **155 labelled agent actions** (128 main + 27 holdout) and **65 documents** for the
@@ -67,6 +94,11 @@ Full tables and caveats: [Evaluation](#evaluation).
 
 ## How it works
 
+![Rules, local Llama and Muse Spark in a cascade; scanner on reads; Muse Spark red team](docs/assets/how-it-works.png)
+
+<details>
+<summary>Detailed flow (Mermaid)</summary>
+
 ```mermaid
 flowchart LR
     A[Claude Code] -->|PreToolUse| H[hooks/on_tool.py]
@@ -83,6 +115,8 @@ flowchart LR
     T -.->|context| L
     T -.->|context| S
 ```
+
+</details>
 
 1. **Rules** settle the clear cases in under a millisecond: secret files, uploads, history
    rewrites, disk wipes, self-protection, simulated keystrokes, project-boundary checks,
@@ -143,7 +177,10 @@ make run                           # daemon on 127.0.0.1:8765, prints the dashbo
 
 Protect a project: merge `examples/settings.agentwarden.json` (or
 `examples/settings.agentwarden.windows.json` on Windows) into that project's
-`.claude/settings.json`:
+`.claude/settings.json`.
+
+<details>
+<summary>What the hook settings look like</summary>
 
 ```json
 {
@@ -160,6 +197,8 @@ Protect a project: merge `examples/settings.agentwarden.json` (or
   }
 }
 ```
+
+</details>
 
 Open the dashboard URL from the daemon console in VS Code (`Simple Browser: Show`). New decisions
 appear within 2 seconds.
@@ -280,6 +319,9 @@ Details per agent: `integrations/<agent>/README.md`.
 
 ## Project layout
 
+<details>
+<summary>Folders and modules</summary>
+
 ```text
 hooks/          Claude Code hook scripts; forward to the daemon, fail closed to ask
 src/agentwarden/
@@ -302,7 +344,13 @@ demo/           demo project generator
 examples/       hook settings and policy to copy into a project
 ```
 
+</details>
+
 Built through specs: every feature started as a written spec in [`docs/specs/`](docs/specs/).
+
+## License
+
+[MIT](LICENSE)
 
 ---
 

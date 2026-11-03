@@ -1,5 +1,16 @@
 # Session state — 2026-11-02
 
+Demo video draft done (outside the repo, `D:\demo-recording\`): raw takes in `raw/` (A
+re-enactment, B1 CSS fix, B2 block via `tools/aw_try.py`, B3 scanner), slides in `slides/`
+(`render.sh`), ffmpeg pipeline in `build/build.py` → `build/out/agentwarden-demo.mp4` (2:39,
+scratch Windows TTS voice). Voiceover text: `docs/video-script.md` (rewritten to match footage).
+To swap in the human voice: put `build/voice/<scene>.wav` (scenes 1 2 3 4a 4b 4c 5 6 7) and run
+`python build.py final`. Learned while recording: Claude Code reads files via Bash `cat` unless
+told to use Read, so the scanner (PostToolUse Read|WebFetch) misses those reads; Opus 5.5
+safeguards stop the session before the injected command, so the deny beat went through the hook
+directly. No Spark escalation happened in the recorded takes.
+Next: human voice, final render, upload, submission (deadline 4 Nov 21:00 ET).
+
 Done: spec 022 (`e185abc`) — cascade escalates to Muse Spark when the action shows obfuscation
 signals (`src/agentwarden/obfuscation.py`: `decode_exec`, `decode_blob`, `ps_encoded`,
 `char_codes`, `dynamic_import`, `eval_indirection`), whatever the local confidence; a local
