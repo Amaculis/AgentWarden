@@ -10,7 +10,6 @@ injected instructions. When in doubt, it fails closed.
 
 [![CI](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml/badge.svg)](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
-![Tests](https://img.shields.io/badge/tests-1315%20passing-2ea44f)
 ![Local judge](https://img.shields.io/badge/local%20judge-Llama%203.1%208B-0467DF)
 ![Escalation](https://img.shields.io/badge/escalation-Muse%20Spark-0467DF)
 ![Fail-closed](https://img.shields.io/badge/fail--closed-always-critical)
@@ -232,6 +231,11 @@ Full run sheet and fallbacks: [`docs/demo.md`](docs/demo.md).
 
 ## Policy
 
+Per-project rules in `.agentwarden/policy.yaml`. They can only tighten the built-in hard denies.
+
+<details>
+<summary>Policy file, read-only mode and project boundary</summary>
+
 Copy `examples/policy.example.yaml` to `.agentwarden/policy.yaml` in the protected project:
 
 ```yaml
@@ -257,6 +261,8 @@ allow_domains: ["pypi.org", "github.com"]
   shell path outside it asks, and the judge can only make that stricter. Widen it with
   `extra_roots` (permanent) or the dashboard's **Allow folder for this session** button. Secrets
   and AgentWarden's own files stay blocked in every allowed folder.
+
+</details>
 
 ## Evaluation
 
