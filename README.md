@@ -8,7 +8,7 @@ Every action the agent takes gets `allow`, `deny` or `ask` — decided by determ
 a local Llama model, and Muse Spark for the hard cases. Anything it reads is scanned for
 injected instructions. When in doubt, it fails closed.
 
-[![CI](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml/badge.svg)](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml)
+[![CI](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Amaculis/AgentWarden/actions/workflows/ci.yml)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
 ![Local judge](https://img.shields.io/badge/local%20judge-Llama%203.1%208B-0467DF)
 ![Escalation](https://img.shields.io/badge/escalation-Muse%20Spark-0467DF)
