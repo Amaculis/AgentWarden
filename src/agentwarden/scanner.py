@@ -18,13 +18,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, ValidationError
 
+from agentwarden import resources
 from agentwarden.judge import DATA_PREAMBLE, env_float, load_prompt
 from agentwarden.providers.base import Provider
 from agentwarden.redact import redact
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "scanner.md"
+DEFAULT_PROMPT_PATH = resources.prompt_path("scanner.md")
 MIN_CHARS = 40
 TRUNCATION_MARK = "\n...[truncated]...\n"
 # Muse Spark is a reasoning model: hidden reasoning tokens count against this budget before any

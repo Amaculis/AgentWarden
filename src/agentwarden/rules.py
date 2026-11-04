@@ -606,6 +606,106 @@ def _daemon_protection_rule(event: ToolEvent) -> Verdict | None:
 
 
 # ---------------------------------------------------------------------------
+# Stage 1f2 -- self-protection: the agentwarden CLI and the installed package (spec 037)
+# ---------------------------------------------------------------------------
+
+# `agentwarden init|uninstall|serve` in command position: at the start, after a separator,
+# `$(`, `bash -c "`, `pwsh -Command`, `cmd /c`, behind runners (`uv run`, `uvx`, `python -m`,
+# `env`, `VAR=x`, PowerShell `&`), as agentwarden.exe or a (quoted) path. Text that merely
+# mentions the command (`grep 'agentwarden serve' README.md`) is not in command position.
+# `status`, `--help` and `--version` stay allowed.
+_CMD_START = r"(?:^|[;&|(`{\n]|\$\(|(?<!\S)(?:-c|-Command|/c)\s+[\"']?)"
+_CMD_PREFIX = (
+    r"(?:\s*(?:sudo|env|nohup|time|exec|command|call|start)\s+"
+    r"|\s*[A-Za-z_]\w{0,64}=(?:\"[^\"\n]{0,260}\"|'[^'\n]{0,260}'|[^\s;&|]{0,260})\s+"
+    r"|\s*uv\s+run(?:\s+-\S+)*\s+|\s*uvx\s+|\s*pipx\s+run\s+"
+    r"|\s*py(?:thon[\d.]{0,8})?(?:\.exe)?\s+-m\s+|\s*&\s*){0,8}"
+)
+_CMD_EXE = (
+    r"\s*(?:\"(?:[^\"\n]{0,260}[/\\])?agentwarden(?:\.exe)?\""
+    r"|'(?:[^'\n]{0,260}[/\\])?agentwarden(?:\.exe)?'"
+    r"|(?:[^\s\"';&|]{0,260}[/\\])?agentwarden(?:\.exe|\.cli|\.__main__)?)"
+)
+_CLI_RE = re.compile(
+    _CMD_START + _CMD_PREFIX + _CMD_EXE + r"(?:\s+-[-\w=]+)*\s+(?:init|uninstall|serve)(?![\w\-])",
+    re.IGNORECASE,
+)
+_DAEMON_APP_RE = re.compile(
+    r"\b(?:uvicorn|hypercorn|gunicorn|granian)\b[^;&|\n]{0,500}\bagentwarden\.daemon\b",
+    re.IGNORECASE,
+)
+# Indirection that reaches the CLI or the package without spelling `agentwarden init`:
+# Python imports (`python -c "from agentwarden.cli import main; main(['init'])"`, the package
+# path via `agentwarden.__file__`), aliases/functions and variables holding the command.
+_INDIRECTION_RE = re.compile(
+    r"\bimport\s+agentwarden\b|\bfrom\s+agentwarden\b|\bagentwarden\.__\w+__"
+    r"|(?:import_module|find_spec|__import__)\(\s*[\"']agentwarden"
+    r"|\b(?:alias|function|Set-Alias|New-Alias|sal|nal|doskey)\b[^\n]{0,500}(?<![\w.\-])agentwarden\b"
+    r"|(?:^|[;&|\s])\$?[A-Za-z_][\w:]{0,64}\s*=\s*[\"']?(?:[^\s\"';&|]{0,260}[/\\])?"
+    r"agentwarden(?:\.exe)?"
+    r"[\"']?(?=\s|;|$)",
+    re.IGNORECASE,
+)
+_UNINSTALL_PACKAGE_RE = re.compile(
+    r"\b(?:pip3?|pipx|uv|conda|poetry)\b[^;&|\n]{0,500}\b(?:uninstall|remove)\b[^;&|\n]{0,500}"
+    r"(?<![\w.\-])agentwarden(?![\w.\-])",
+    re.IGNORECASE,
+)
+_INSTALLED_DIR_RE = re.compile(
+    r"(?:site-packages|dist-packages|uv[/\\]tools|pipx[/\\]venvs)[/\\]agentwarden\b",
+    re.IGNORECASE,
+)
+_CLI_MODIFYING_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def _package_dir() -> str:
+    from agentwarden import resources
+
+    return posixpath.normpath(str(resources.PACKAGE_DIR).replace("\\", "/")).lower()
+
+
+def _in_installed_package(raw_path: str, cwd: str) -> bool:
+    """Inside AgentWarden's own package dir, unless the project is AgentWarden's checkout."""
+    package = _package_dir()
+    if _is_inside_project(package, cwd):
+        return False  # developing AgentWarden itself
+    full = _normalize_full(raw_path, cwd)
+    return full == package or full.startswith(package + "/")
+
+
+def _cli_rule(event: ToolEvent) -> Verdict | None:
+    tool = event.tool_name
+    if tool in _SHELL_TOOLS:
+        command = _get_str(event.tool_input, "command")
+        if not command:
+            return None
+        if _CLI_RE.search(command) or _DAEMON_APP_RE.search(command):
+            return _deny(
+                "changing AgentWarden's hooks or starting its daemon is not allowed",
+                ALT_SELF_PROTECTION,
+            )
+        if _INDIRECTION_RE.search(command) and not _is_inside_project(_package_dir(), event.cwd):
+            return _deny(
+                "reaching AgentWarden's CLI or package indirectly is not allowed",
+                ALT_SELF_PROTECTION,
+            )
+        if _UNINSTALL_PACKAGE_RE.search(command):
+            return _deny("uninstalling AgentWarden is not allowed", ALT_SELF_PROTECTION)
+        if _INSTALLED_DIR_RE.search(command):
+            return _deny(
+                "touching AgentWarden's installed files is not allowed", ALT_SELF_PROTECTION
+            )
+        return None
+    if tool in _CLI_MODIFYING_TOOLS:
+        for field in _collect_path_fields(event) or []:
+            if _in_installed_package(field, event.cwd):
+                return _deny(
+                    "touching AgentWarden's installed files is not allowed", ALT_SELF_PROTECTION
+                )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Stage 1g -- self-protection: synthetic keyboard/mouse input (spec 031)
 # ---------------------------------------------------------------------------
 
@@ -662,6 +762,7 @@ def _hard_deny_stage(event: ToolEvent) -> Verdict | None:
         _hooks_rule,
         _agent_config_rule,
         _daemon_protection_rule,
+        _cli_rule,
         _input_injection_rule,
         _unknown_agent_tool_rule,
     ):
@@ -1231,6 +1332,8 @@ def _target_verdict(tool: str, lexical: str, target: str, cwd: str) -> Verdict |
         return _via_link(lexical, target, "AgentWarden's .claude settings; editing is not allowed")
     if _is_project_hooks_path(target, cwd):
         return _via_link(lexical, target, "AgentWarden's hooks; touching them is not allowed")
+    if tool in _CLI_MODIFYING_TOOLS and _in_installed_package(target, cwd):
+        return _via_link(lexical, target, "AgentWarden's installed files; editing is not allowed")
     if _is_agent_config_path(target, cwd) and tool not in ("Read", "Grep", "Glob"):
         return _via_link(lexical, target, "a coding agent's hook config; editing is not allowed")
     return None

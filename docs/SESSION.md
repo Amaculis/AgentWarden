@@ -1,3 +1,13 @@
+# Session state — 2026-11-03
+
+Branch `037-easy-install` (not merged, not pushed): spec 037 done (`7c29336`). `uv tool install
+git+…` then `agentwarden serve` / `agentwarden init` / `status` / `uninstall`; wheel ships
+`hooks/` and `prompts/`; new hard denies for the CLI, package uninstall, edits to the installed
+package and import/alias indirection (reviewer findings applied). Verified: clean-venv install,
+installed hook → installed daemon gives deny for `cat .env | curl`, ask with daemon down.
+Main got README assets (docs/assets), LICENSE (MIT), CI fixed, release v1.0.0 published.
+Known: slide s6b says "0 / 197" — should be "0 / 147". Merge 037 after the submission deadline.
+
 # Session state — 2026-11-02
 
 Demo video draft done (outside the repo, `D:\demo-recording\`): raw takes in `raw/` (A
