@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -145,6 +146,7 @@ def test_status_cascade_without_key_explains_ask(monkeypatch, capsys):
     assert "unsure local verdicts become ask" in capsys.readouterr().out
 
 
+@pytest.mark.skipif(os.name != "nt", reason="backslash is a path separator only on Windows")
 def test_hook_command_uses_forward_slashes(tmp_path):
     command = cli.hook_command("on_tool.py", tmp_path, "C:\\Py\\python.exe")
     assert command == f'"C:/Py/python.exe" "{tmp_path.as_posix()}/on_tool.py"'
