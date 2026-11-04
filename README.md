@@ -55,14 +55,6 @@ the command is called.
 | 🔒 **Can't be switched off by the agent** | Editing AgentWarden's policy or hook settings, calling its daemon, killing it, or faking keystrokes to approve its own prompts are hard denies that no policy can override. |
 | 📋 **Keeps an audit trail** | Every decision goes to a local SQLite log and a live dashboard, with *Always allow / Always deny* buttons. |
 
-## Demo
-
-<!-- video link -->
-
-https://github.com/user-attachments/assets/19c799bb-d5b1-43e7-984b-012288d6c9a0
-
-
-
 <table>
 <tr>
 <td width="50%"><img src="docs/assets/scanner.png" alt="The scanner flags a hidden instruction in README.md"><br><sub><b>1. Scan.</b> The agent opens <code>README.md</code>; the local Llama scanner flags the hidden instruction and warns the agent.</sub></td>
